@@ -8,8 +8,8 @@ export function kitchenParts(now: Date) {
     timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   });
-  const o = Object.fromEntries(f.formatToParts(now).map((p) => [p.type, p.value]));
-  return { y: +o.year, mo: +o.month, d: +o.day, minutes: +o.hour * 60 + +o.minute };
+  const get = (t: string) => Number(f.formatToParts(now).find((p) => p.type === t)?.value ?? 0);
+  return { y: get("year"), mo: get("month"), d: get("day"), minutes: get("hour") * 60 + get("minute") };
 }
 
 export function isOpen(now: Date): boolean {

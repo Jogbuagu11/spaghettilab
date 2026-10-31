@@ -38,7 +38,7 @@ describe("scheduling", () => {
     expect(availableSlots(pst(9))[0]).toMatchObject({ day: "today", minutes: 12 * 60 + 15 });
   });
   it("earliest slot is at least 15 minutes out", () => {
-    expect(availableSlots(pst(14, 5))[0].minutes).toBe(14 * 60 + 30);
+    expect(availableSlots(pst(14, 5))[0]?.minutes).toBe(14 * 60 + 30);
   });
   it("after close, only tomorrow slots", () => {
     expect(availableSlots(pst(21))[0]).toMatchObject({ day: "tomorrow", minutes: 735 });
