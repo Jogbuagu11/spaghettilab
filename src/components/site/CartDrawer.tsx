@@ -7,7 +7,7 @@ import { CUSTOMIZATIONS, DEFAULT_TAX_RATE, EXTRAS, HEAT, PROTEINS, SIZES, format
 import { orderTotals, platePrice, type Plate } from "@/lib/pricing";
 
 export function describePlate(p: Plate) {
-  const parts = [HEAT.find((h) => h.id === p.heat)!.label];
+  const parts: string[] = [HEAT.find((h) => h.id === p.heat)!.label];
   PROTEINS.forEach((pr) => { const n = p.proteins[pr.id] ?? 0; if (n) parts.push(`${n}× ${pr.label}`); });
   CUSTOMIZATIONS.forEach((c) => p.customs.includes(c.id) && parts.push(c.label));
   return parts.join(" · ");

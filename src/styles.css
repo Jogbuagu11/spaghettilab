@@ -141,7 +141,7 @@
   min-height: 2.75rem; padding: 0.5rem 0.9rem;
   border: 2px solid var(--ink); border-radius: 999px;
   background: var(--card); font-weight: 600; font-size: 0.9rem;
-  transition: transform 120ms, background 120ms;
+  transition: transform 120ms;
   &[data-active="true"] { background: var(--primary); color: var(--primary-foreground); box-shadow: var(--shadow-pop-sm); }
   &:active { transform: translateY(1px); }
 }
