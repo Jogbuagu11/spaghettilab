@@ -30,3 +30,28 @@ export async function requireAdmin(req: Request): Promise<string> {
 
   return email;
 }
+
+/**
+ * Guards cron-only endpoints.
+ *
+ * These functions are deployed with JWT verification on, so Supabase's gateway
+ * has already validated the signature before we see the request — the anon key
+ * is a validly signed JWT too, though, so we still have to distinguish the
+ * roles. Reading the `role` claim does that without depending on the exact key
+ * string Supabase happens to inject, which differs between the legacy JWT and
+ * the newer `sb_secret_` key formats.
+ */
+export function isServiceRole(req: Request): boolean {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+
+  const payload = token.split(".")[1];
+  if (!payload) return false;
+
+  try {
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    return (JSON.parse(json) as { role?: string }).role === "service_role";
+  } catch {
+    return false;
+  }
+}

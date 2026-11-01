@@ -114,6 +114,11 @@ insert into admin_users (email) values ('someone@example.com');
 
 Set the function secrets, then deploy:
 
+Cron-only functions (`run-subscriptions`, `send-review-requests`) authorise by reading the
+`role` claim of the caller's JWT rather than string-matching the service role key — Supabase's
+gateway has already verified the signature, and the injected key's format differs between the
+legacy JWT and newer `sb_secret_` styles.
+
 ```sh
 supabase secrets set --env-file .env.local
 supabase functions deploy create-order track-order submit-review \

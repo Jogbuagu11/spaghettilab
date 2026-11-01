@@ -6,21 +6,17 @@
  * they've eaten, soon enough that they remember.
  */
 import { loadCatalog } from "../_shared/catalog.ts";
-import { serviceClient } from "../_shared/db.ts";
+import { isServiceRole, serviceClient } from "../_shared/db.ts";
 import { sendEmail } from "../_shared/emails/send.ts";
 import { reviewRequest, type EmailOrder } from "../_shared/emails/templates.ts";
-import { requireEnv } from "../_shared/env.ts";
 
 const DELAY_HOURS = 3;
 const WINDOW_HOURS = 72; // don't chase orders older than this
 const BATCH = 50;
 
 Deno.serve(async (req) => {
-  // Invoked by cron with the service role key, never from a browser.
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (auth !== requireEnv("SUPABASE_SERVICE_ROLE_KEY")) {
-    return new Response("Not authorised", { status: 401 });
-  }
+  // Invoked by cron under the service role, never from a browser.
+  if (!isServiceRole(req)) return new Response("Not authorised", { status: 401 });
 
   const db = serviceClient();
   const now = Date.now();
