@@ -8,7 +8,13 @@
 import { loadCatalog } from "../_shared/catalog.ts";
 import { requireAdmin, serviceClient } from "../_shared/db.ts";
 import { sendEmail } from "../_shared/emails/send.ts";
-import { orderCancelled, orderStatus, type EmailOrder } from "../_shared/emails/templates.ts";
+import {
+  orderCancelled,
+  orderDelivered,
+  orderStatus,
+  type EmailOrder,
+} from "../_shared/emails/templates.ts";
+import { requireEnv } from "../_shared/env.ts";
 import { fail, json, preflight, PublicError } from "../_shared/http.ts";
 import { refundPayment } from "../_shared/square.ts";
 import { optionalString } from "../_shared/validate.ts";
@@ -44,6 +50,8 @@ Deno.serve(async (req) => {
     });
 
     const orderId = String(payload.orderId ?? "");
+    const deliveryNote = optionalString(payload.deliveryNote, 200);
+    const photoPath = optionalString(payload.photoPath, 300);
     const next = String(payload.status ?? "") as Status;
     const reason = optionalString(payload.reason, 300);
 
@@ -56,6 +64,20 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!order) throw new PublicError("Order not found.", 404);
+
+    // The admin uploads straight to storage, then hands us the path. Pin it to
+    // this order so a mistyped or malicious path can't attach someone else's
+    // photo to a different customer's receipt.
+    let photoUrl: string | null = null;
+    if (photoPath) {
+      if (!/^[0-9a-f-]{36}\/[A-Za-z0-9_-]{8,}\.(jpg|jpeg|png|webp)$/i.test(photoPath)) {
+        throw new PublicError("That photo path isn't valid.");
+      }
+      if (!photoPath.startsWith(`${orderId}/`)) {
+        throw new PublicError("That photo belongs to a different order.");
+      }
+      photoUrl = `${requireEnv("SUPABASE_URL")}/storage/v1/object/public/delivery-proof/${photoPath}`;
+    }
 
     const legal = ALLOWED[order.status] ?? [];
     if (!legal.includes(next)) {
@@ -81,6 +103,8 @@ Deno.serve(async (req) => {
         status: next,
         cancellation_reason: next === "cancelled" || next === "refunded" ? reason : null,
         completed_at: next === "completed" ? new Date().toISOString() : order.completed_at,
+        ...(photoPath ? { delivery_photo_path: photoPath, delivery_photo_url: photoUrl } : {}),
+        ...(deliveryNote ? { delivery_note: deliveryNote } : {}),
       })
       .eq("id", orderId)
       .select("*")
@@ -100,22 +124,27 @@ Deno.serve(async (req) => {
       ),
     };
 
+    // A completed delivery gets its own email: it says *delivered*, names the
+    // drop-off spot and carries the photo. Pickup keeps the generic copy.
+    const isDelivery = updated.fulfillment === "delivery";
     const email =
       next === "cancelled" || next === "refunded"
         ? orderCancelled(emailOrder, reason, refunded)
-        : orderStatus(emailOrder, ctx, next);
+        : next === "completed" && isDelivery
+          ? orderDelivered(emailOrder, ctx)
+          : orderStatus(emailOrder, ctx, next);
 
     if (email) {
       await sendEmail(db, {
         to: updated.customer_email,
         email,
-        template: `order_${next}`,
+        template: next === "completed" && isDelivery ? "order_delivered" : `order_${next}`,
         orderId,
         once: true,
       });
     }
 
-    return json(req, { ok: true, status: next, refunded });
+    return json(req, { ok: true, status: next, refunded, photoUrl });
   } catch (error) {
     return fail(req, error);
   }

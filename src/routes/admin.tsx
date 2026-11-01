@@ -1,12 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { Camera } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { manageSubscription, updateOrderStatus, type SubscriptionAction } from "@/lib/api";
+import {
+  manageSubscription,
+  updateOrderStatus,
+  uploadDeliveryPhoto,
+  type SubscriptionAction,
+} from "@/lib/api";
 import { formatMoney } from "@/lib/menu";
 import { formatMinutes } from "@/lib/schedule";
 import { pageMeta } from "@/lib/seo";
@@ -187,8 +193,87 @@ const NEXT_STATUS: Record<
     { status: "completed", label: "Picked up", variant: "lab" },
     { status: "out_for_delivery", label: "Out for delivery", variant: "labGhost" },
   ],
-  out_for_delivery: [{ status: "completed", label: "Delivered", variant: "lab" }],
+  // "Delivered" is handled separately so it can capture proof first.
+  out_for_delivery: [],
 };
+
+/**
+ * Capture proof of delivery, then complete the order.
+ *
+ * The photo is optional on purpose: a driver standing in the rain, or handing
+ * the bag straight to the customer, shouldn't be blocked from closing out the
+ * order. Skipping sends the same delivered email without an image.
+ */
+function DeliveredButton({
+  order,
+  onComplete,
+  busy,
+}: {
+  order: OrderRow;
+  onComplete: (input: {
+    photoPath?: string | undefined;
+    deliveryNote?: string | undefined;
+  }) => void;
+  busy: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [note, setNote] = useState("");
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const photoPath = await uploadDeliveryPhoto(order.id, file);
+      onComplete({ photoPath, deliveryNote: note.trim() || undefined });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't upload that photo.");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="w-full space-y-2 rounded-xl bg-muted p-3">
+      <Input
+        className="h-10 bg-card"
+        placeholder="Where did you leave it? (optional)"
+        value={note}
+        maxLength={200}
+        onChange={(e) => setNote(e.target.value)}
+      />
+      <div className="flex flex-wrap gap-2">
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          // Opens the rear camera directly on a phone rather than the gallery.
+          capture="environment"
+          className="hidden"
+          onChange={(e) => handleFile(e.target.files?.[0])}
+        />
+        <Button
+          variant="lab"
+          size="sm"
+          disabled={busy || uploading}
+          onClick={() => inputRef.current?.click()}
+        >
+          <Camera className="mr-2 size-4" aria-hidden />
+          {uploading ? "Uploading…" : "Photo + mark delivered"}
+        </Button>
+        <Button
+          variant="labGhost"
+          size="sm"
+          disabled={busy || uploading}
+          onClick={() => onComplete({ deliveryNote: note.trim() || undefined })}
+        >
+          Delivered, skip photo
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function OrdersTab() {
   const qc = useQueryClient();
@@ -212,8 +297,14 @@ function OrdersTab() {
   });
 
   const move = useMutation({
-    mutationFn: (input: { orderId: string; status: string; reason?: string; refund?: boolean }) =>
-      updateOrderStatus(input),
+    mutationFn: (input: {
+      orderId: string;
+      status: string;
+      reason?: string | undefined;
+      refund?: boolean | undefined;
+      photoPath?: string | undefined;
+      deliveryNote?: string | undefined;
+    }) => updateOrderStatus(input),
     onSuccess: (result) => {
       toast.success(result.refunded ? "Cancelled and refunded." : "Order updated.");
       qc.invalidateQueries({ queryKey: ["admin-orders"] });
@@ -293,6 +384,26 @@ function OrdersTab() {
               <span className="block text-muted-foreground">{order.delivery_address}</span>
             )}
           </p>
+
+          {order.delivery_photo_url && (
+            <a href={order.delivery_photo_url} target="_blank" rel="noreferrer" className="block">
+              <img
+                src={order.delivery_photo_url}
+                alt={`Drop-off for ${order.order_number}`}
+                className="max-h-40 rounded-xl border-2 border-ink object-cover"
+              />
+            </a>
+          )}
+
+          {order.status === "out_for_delivery" && (
+            <DeliveredButton
+              order={order}
+              busy={move.isPending}
+              onComplete={({ photoPath, deliveryNote }) =>
+                move.mutate({ orderId: order.id, status: "completed", photoPath, deliveryNote })
+              }
+            />
+          )}
 
           <div className="flex flex-wrap gap-2">
             {(NEXT_STATUS[order.status] ?? []).map((action) => (

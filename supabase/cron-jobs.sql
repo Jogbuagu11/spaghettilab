@@ -53,7 +53,27 @@ select cron.schedule(
   $$
 );
 
+-- Delivery photos, purged daily. These are pictures of customers' doorsteps,
+-- kept only as long as a dispute could plausibly arrive (30 days).
+select cron.schedule(
+  'purge-delivery-photos',
+  '30 4 * * *',
+  $$
+  select net.http_post(
+    url     := 'https://YOUR-PROJECT-REF.supabase.co/functions/v1/purge-delivery-photos',
+    headers := jsonb_build_object(
+      'Content-Type',  'application/json',
+      'Authorization', 'Bearer ' || (
+        select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key'
+      )
+    ),
+    body    := '{}'::jsonb
+  );
+  $$
+);
+
 -- To inspect or remove:
 --   select jobname, schedule, active from cron.job;
 --   select cron.unschedule('run-subscriptions');
 --   select cron.unschedule('send-review-requests');
+--   select cron.unschedule('purge-delivery-photos');

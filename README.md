@@ -178,6 +178,7 @@ idempotency guard, so a retried webhook can't send a second receipt.
 | `kitchen_alert` | Payment succeeds (to `KITCHEN_EMAIL`) |
 | `order_preparing` / `order_ready` / `order_out_for_delivery` / `order_completed` | Admin status change |
 | `order_cancelled` | Admin cancels, with refund status |
+| `order_delivered` | A delivery is marked delivered — includes the drop-off photo |
 | `review_request` | 3 hours after completion (cron) |
 | `subscription_confirmed` | Weekly standing order created |
 | `subscription_failed_*` | A weekly charge is declined |
@@ -239,6 +240,26 @@ not just the UI).
 - **Settings** — tax rate, delivery fee and radius, prep time, pickup address, contact details,
   social links, GA4 / Meta Pixel ids, and a kill switch for new orders
 - **Reviews** — moderate before anything appears publicly
+
+## Proof of delivery
+
+Marking a delivery **Delivered** in the admin opens the phone camera. The photo is optional —
+skipping still completes the order and sends the same email, just without an image — because a
+driver in the rain or handing the bag over in person shouldn't be blocked from closing a ticket.
+
+The image is downscaled to 1600px and re-encoded client-side before upload (phone originals run
+4–12MB, which is slow on a kitchen's connection and far more than an email needs), stored in the
+public `delivery-proof` bucket, embedded in the delivered email and shown on the customer's
+`/track` page.
+
+The bucket is public because email clients can't send auth headers and a signed URL would expire
+while the receipt is still in someone's inbox. Privacy comes from three things instead:
+
+- an unguessable path (`{order uuid}/{random}.jpg`), validated server-side against the order so a
+  photo can't be attached to someone else's receipt;
+- an RLS policy allowing only admins to write to the bucket;
+- a 30-day purge (`purge-delivery-photos`, daily via cron). Deletion is immediate at origin but a
+  cached copy may survive at the CDN edge for up to its cache lifetime.
 
 ## Privacy notes
 

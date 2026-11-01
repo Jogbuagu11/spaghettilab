@@ -21,6 +21,11 @@
 - [x] Weekly standing orders: card on file, auto-charged, free delivery, skip/pause/cancel
 - [x] Admin tab for standing orders; customer self-service at /subscription
 
+## Phase 5 — proof of delivery (done)
+- [x] Camera capture on "Delivered", optional, with a drop-off note
+- [x] Delivery-specific email with the photo embedded; photo also on /track
+- [x] 30-day automatic purge, admin-only uploads, path pinned to the order
+
 ## Still needs the owner
 - [x] Supabase project linked, migrations applied, admin user seeded
 - [x] spaghettilab.store verified in Resend
@@ -38,5 +43,6 @@
 
 ## Later
 - [ ] SMS order updates (Twilio) — email only today
+- [ ] Delivery photo is admin-captured; no separate driver app or login
 - [ ] Printed kitchen tickets / receipt printer
 - [ ] Loyalty or repeat-order discounts

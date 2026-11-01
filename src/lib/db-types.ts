@@ -40,6 +40,9 @@ export interface OrderRow {
   tip_cents: number;
   total_cents: number;
   customer_note: string | null;
+  delivery_photo_url: string | null;
+  delivery_note: string | null;
+  completed_at: string | null;
   created_at: string;
   order_items: OrderItemRow[] | null;
 }

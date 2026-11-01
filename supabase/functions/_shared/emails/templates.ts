@@ -29,6 +29,9 @@ export interface EmailOrder {
   card_last4: string | null;
   track_token: string;
   customer_note: string | null;
+  delivery_photo_url?: string | null;
+  delivery_note?: string | null;
+  completed_at?: string | null;
   items: EmailOrderItem[];
 }
 
@@ -201,6 +204,56 @@ export function orderStatus(
         status === "completed"
           ? { label: "Order again", url: `${SITE_URL}/menu` }
           : { label: "Track your order", url: trackUrl(order) },
+    }),
+  };
+}
+
+/**
+ * Delivery completion. Distinct from the generic `completed` copy because a
+ * delivery needs to say *delivered* — with when, where it was left, and the
+ * drop-off photo if one was taken.
+ */
+export function orderDelivered(order: EmailOrder, ctx: EmailContext): RenderedEmail {
+  const when = order.completed_at ? formatReadyAt(new Date(order.completed_at)) : null;
+
+  const photo = order.delivery_photo_url
+    ? card(`
+        ${label("Photo at drop-off")}
+        <img src="${order.delivery_photo_url}" width="536" alt="Your order at the delivery address"
+             style="display:block;width:100%;max-width:536px;height:auto;border-radius:10px;border:2px solid ${BRAND.ink};" />`)
+    : "";
+
+  const details = card(`
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td width="50%" style="vertical-align:top;padding-right:10px;">
+          ${label("Delivered")}
+          <p style="margin:0;font-family:${SANS};font-size:17px;font-weight:bold;color:${BRAND.ink};">${escapeHtml(when ?? "Just now")}</p>
+        </td>
+        <td width="50%" style="vertical-align:top;padding-left:10px;border-left:1px solid ${BRAND.border};">
+          ${label("To")}
+          <p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.5;color:${BRAND.ink};">${escapeHtml(order.delivery_address ?? "")}</p>
+        </td>
+      </tr>
+    </table>
+    ${order.delivery_note ? `<p style="margin:16px 0 0;padding-top:14px;border-top:1px solid ${BRAND.border};font-family:${SANS};font-size:14px;color:${BRAND.mutedText};"><strong style="color:${BRAND.ink};">Left:</strong> ${escapeHtml(order.delivery_note)}</p>` : ""}`);
+
+  return {
+    subject: `Delivered — order ${order.order_number}`,
+    html: renderEmail({
+      preheader: order.delivery_photo_url
+        ? "Your spaghetti has arrived — photo inside."
+        : "Your spaghetti has arrived.",
+      eyebrow: `Order ${order.order_number}`,
+      heading: `It's there, ${firstName(order.customer_name)} — enjoy!`,
+      body: `
+        ${paragraph("Your order has been delivered. Buon appetito!")}
+        ${details}
+        ${photo}`,
+      cta: { label: "Order again", url: `${SITE_URL}/menu` },
+      footerNote: ctx.googleReviewUrl
+        ? `Enjoyed it? <a href="${ctx.googleReviewUrl}" style="color:${BRAND.mutedText};">Leave us a review</a>.`
+        : "Something not right? Just reply to this email.",
     }),
   };
 }

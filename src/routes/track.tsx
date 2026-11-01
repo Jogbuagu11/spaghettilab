@@ -206,6 +206,19 @@ function TrackPage() {
           </>
         )}
 
+        {order.delivery_photo_url && (
+          <div className="lab-card mt-4 p-5">
+            <p className="lab-label text-muted-foreground">Delivered</p>
+            {order.delivery_note && <p className="mt-1 font-semibold">{order.delivery_note}</p>}
+            <img
+              src={order.delivery_photo_url}
+              alt="Your order at the delivery address"
+              className="mt-3 w-full rounded-xl border-2 border-ink"
+              loading="lazy"
+            />
+          </div>
+        )}
+
         <div className="lab-card mt-4 p-5">
           <p className="lab-label text-muted-foreground">Your order</p>
           <div className="mt-3 space-y-2">

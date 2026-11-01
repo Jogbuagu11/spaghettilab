@@ -104,6 +104,9 @@ export interface TrackedOrder {
   card_brand: string | null;
   card_last4: string | null;
   customer_note: string | null;
+  delivery_photo_url: string | null;
+  delivery_note: string | null;
+  completed_at: string | null;
   created_at: string;
   items: TrackedOrderItem[];
 }
@@ -135,8 +138,61 @@ export function updateOrderStatus(input: {
   status: string;
   reason?: string | undefined;
   refund?: boolean | undefined;
-}): Promise<{ ok: true; status: string; refunded: boolean }> {
+  /** Object path inside the delivery-proof bucket, from uploadDeliveryPhoto. */
+  photoPath?: string | undefined;
+  deliveryNote?: string | undefined;
+}): Promise<{ ok: true; status: string; refunded: boolean; photoUrl: string | null }> {
   return callFunction("update-order-status", { method: "POST", body: JSON.stringify(input) });
+}
+
+const PHOTO_MAX_EDGE = 1600;
+const PHOTO_QUALITY = 0.72;
+
+/**
+ * Shrinks a camera photo before upload. A modern phone shoots 4-12MB, which is
+ * slow on a kitchen's mobile connection and far larger than an email needs.
+ * Falls back to the original file if canvas encoding isn't available.
+ */
+async function compress(file: File): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", PHOTO_QUALITY),
+    );
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
+
+/**
+ * Uploads proof of delivery and returns its object path.
+ *
+ * The filename is random so the public URL can't be guessed from the order id
+ * alone — the bucket is public because email clients can't authenticate, so
+ * the path is what keeps a customer's doorstep photo private.
+ */
+export async function uploadDeliveryPhoto(orderId: string, file: File): Promise<string> {
+  const body = await compress(file);
+  const suffix = crypto.randomUUID().replace(/-/g, "");
+  const path = `${orderId}/${suffix}.jpg`;
+
+  const { error } = await supabase.storage
+    .from("delivery-proof")
+    .upload(path, body, { contentType: "image/jpeg", upsert: false });
+
+  if (error) throw new ApiError(error.message, 400);
+  return path;
 }
 
 // --------------------------------------------------- weekly standing order ----
