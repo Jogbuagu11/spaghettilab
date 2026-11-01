@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera } from "lucide-react";
+import { Camera, Printer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -197,6 +197,105 @@ const NEXT_STATUS: Record<
   out_for_delivery: [],
 };
 
+const TICKET_WIDTH = 32; // characters that fit across 72mm at 11px mono
+
+/** Right-aligns a price against a label, the way a receipt printer expects. */
+function ticketRow(label: string, value: string) {
+  const gap = Math.max(1, TICKET_WIDTH - label.length - value.length);
+  return `${label}${" ".repeat(gap)}${value}`;
+}
+
+const kitchenTime = (iso: string | null) =>
+  iso
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(iso))
+    : "ASAP";
+
+/**
+ * The 80mm kitchen ticket. Rendered off-screen and revealed only by the print
+ * stylesheet, so printing needs no popup, no extra route and no second fetch.
+ */
+function PrintTicket({ order }: { order: OrderRow | null }) {
+  if (!order) return null;
+
+  const items = [...(order.order_items ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+  const money = (c: number) => (c / 100).toFixed(2);
+
+  return (
+    <div className="print-ticket">
+      <div style={{ textAlign: "center" }}>
+        <div className="huge">SPAGHETTI LAB</div>
+        <div>spaghettilab.store</div>
+      </div>
+
+      <div className="rule" />
+
+      <div className="row big">
+        <span>{order.order_number}</span>
+        <span>{order.fulfillment === "pickup" ? "PICKUP" : "DELIVERY"}</span>
+      </div>
+      <div>
+        {order.scheduled_for ? "Scheduled" : "Ready"}: {kitchenTime(order.ready_at)}
+      </div>
+
+      <div className="rule" />
+
+      {items.map((item, i) => (
+        <div key={i}>
+          <div className="row">
+            <span>
+              {item.quantity}x {item.label}
+            </span>
+            <span>{money(item.total_price_cents)}</span>
+          </div>
+          {item.config?.summary && <div className="mod">{item.config.summary}</div>}
+        </div>
+      ))}
+
+      <div className="rule" />
+
+      <pre style={{ margin: 0, fontFamily: "inherit", fontSize: "inherit" }}>
+        {[
+          ticketRow("Subtotal", money(order.subtotal_cents)),
+          order.delivery_fee_cents > 0
+            ? ticketRow("Delivery", money(order.delivery_fee_cents))
+            : null,
+          ticketRow("Tax", money(order.tax_cents)),
+          order.tip_cents > 0 ? ticketRow("Tip", money(order.tip_cents)) : null,
+        ]
+          .filter(Boolean)
+          .join("\n")}
+      </pre>
+      <div className="row big">
+        <span>TOTAL</span>
+        <span>{money(order.total_cents)}</span>
+      </div>
+
+      <div className="rule" />
+
+      <div>{order.customer_name}</div>
+      <div>{order.customer_phone}</div>
+      {order.delivery_address && <div>{order.delivery_address}</div>}
+      {order.customer_note && (
+        <>
+          <div className="rule" />
+          <div className="big">NOTE</div>
+          <div>{order.customer_note}</div>
+        </>
+      )}
+
+      <div className="rule" />
+      <div style={{ textAlign: "center" }}>Thank you!</div>
+    </div>
+  );
+}
+
 /**
  * Capture proof of delivery, then complete the order.
  *
@@ -278,6 +377,14 @@ function DeliveredButton({
 function OrdersTab() {
   const qc = useQueryClient();
   const [showAll, setShowAll] = useState(false);
+  const [ticket, setTicket] = useState<OrderRow | null>(null);
+
+  // Mount the ticket, let React paint, then print — otherwise the dialog can
+  // open against the previous order's markup.
+  const printTicket = (order: OrderRow) => {
+    setTicket(order);
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+  };
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["admin-orders", showAll],
@@ -316,6 +423,7 @@ function OrdersTab() {
 
   return (
     <div className="space-y-4">
+      <PrintTicket order={ticket} />
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-black">
           {showAll ? "All orders" : "Live orders"}
@@ -406,6 +514,10 @@ function OrdersTab() {
           )}
 
           <div className="flex flex-wrap gap-2">
+            <Button variant="labGhost" size="sm" onClick={() => printTicket(order)}>
+              <Printer className="mr-2 size-4" aria-hidden />
+              Print ticket
+            </Button>
             {(NEXT_STATUS[order.status] ?? []).map((action) => (
               <Button
                 key={action.status}

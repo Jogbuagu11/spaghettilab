@@ -304,3 +304,64 @@ Deno.test("caps the number of plates per order", () => {
     "limited to",
   );
 });
+
+// --- Square line breakdown ------------------------------------------------
+
+Deno.test("a plate breaks down into a base variation plus priced modifiers", () => {
+  const priced = priceOrder(catalog(), {
+    plates: [
+      plate({
+        size: "large",
+        heat: "spicy",
+        proteins: { meatball: 2 },
+        customizations: ["mushroom"],
+      }),
+    ],
+    fulfillment: "pickup",
+  });
+
+  const sq = priced.lines[0]!.square;
+  assertEquals(sq.name, "Spaghetti Plate");
+  assertEquals(sq.variationName, "large");
+  assertEquals(sq.basePriceCents, 2600);
+  assertEquals(sq.modifiers, [
+    { name: "spicy", priceCents: 0, quantity: 1 },
+    { name: "meatball", priceCents: 400, quantity: 2 },
+    { name: "mushroom", priceCents: 100, quantity: 1 },
+  ]);
+
+  // The breakdown must reconstruct the collapsed line price exactly, or the
+  // Square order total won't match the payment.
+  const rebuilt =
+    sq.basePriceCents + sq.modifiers.reduce((t, m) => t + m.priceCents * m.quantity, 0);
+  assertEquals(rebuilt, priced.lines[0]!.unit_price_cents);
+});
+
+Deno.test("an extra breaks down as a plain item", () => {
+  const priced = priceOrder(catalog(), {
+    plates: [plate()],
+    extras: { coke: 3 },
+    fulfillment: "pickup",
+  });
+  const extra = priced.lines.find((l) => l.kind === "extra")!;
+  assertEquals(extra.square, { name: "coke", basePriceCents: 200, modifiers: [] });
+  assertEquals(extra.quantity, 3);
+});
+
+// --- tax rounding ---------------------------------------------------------
+
+// Square rounds half to even. Math.round rounds half up, and the two disagree
+// on a plain Small plate — which would make the payment amount differ from the
+// order total and be rejected.
+Deno.test("tax rounds half to even, matching Square", () => {
+  // $12.00 x 9.375% is exactly 112.5c: Math.round would say 113, Square says
+  // 112, and the payment would be rejected for not matching the order total.
+  for (const [size, expected] of [
+    ["small", 112],
+    ["medium", 169],
+    ["large", 244],
+  ] as const) {
+    const priced = priceOrder(catalog(), { plates: [plate({ size })], fulfillment: "pickup" });
+    assertEquals(priced.tax_cents, expected, `${size} plate`);
+  }
+});

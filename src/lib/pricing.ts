@@ -40,6 +40,24 @@ export function extrasPrice(
   return menu.extras.reduce((sum, e) => sum + e.price * (extras[e.id as ExtraId] ?? 0), 0);
 }
 
+/**
+ * Rounds half to even ("banker's rounding").
+ *
+ * This matches Square's tax arithmetic, and that match is load-bearing: when
+ * an order is paid through the Orders API the payment amount must equal the
+ * order total exactly. Math.round rounds half *up*, which disagrees with
+ * Square on any half-cent — a plain Small plate is one ($12.00 x 9.375% =
+ * 112.5c, where we'd have said 113 and Square says 112) and the payment would
+ * be rejected.
+ */
+export function roundCents(value: number): number {
+  const floor = Math.floor(value);
+  const remainder = value - floor;
+  if (remainder > 0.5) return floor + 1;
+  if (remainder < 0.5) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
 export type FreeDeliveryReason =
   "pickup" | "subscription" | "earned" | "needs_lead_time" | "needs_spend" | "needs_both";
 
@@ -118,7 +136,7 @@ export function orderTotals(
   const subtotal = plates.reduce((s, p) => s + platePrice(p, menu), 0) + extrasPrice(extras, menu);
   const freeDelivery = evaluateFreeDelivery(subtotal, fulfillment, menu, timing);
   const delivery = freeDelivery.free ? 0 : menu.deliveryFee;
-  const tax = Math.round(subtotal * taxRate);
+  const tax = roundCents(subtotal * taxRate);
   return {
     subtotal,
     delivery,

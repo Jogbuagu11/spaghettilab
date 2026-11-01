@@ -26,6 +26,11 @@
 - [x] Delivery-specific email with the photo embedded; photo also on /track
 - [x] 30-day automatic purge, admin-only uploads, path pinned to the order
 
+## Phase 6 — receipts (done)
+- [x] Itemised Square orders so receipts and item sales reporting work
+- [x] Tax rounding aligned with Square's half-to-even
+- [x] 80mm thermal kitchen ticket from /admin
+
 ## Still needs the owner
 - [x] Supabase project linked, migrations applied, admin user seeded
 - [x] spaghettilab.store verified in Resend

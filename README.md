@@ -241,6 +241,29 @@ not just the UI).
   social links, GA4 / Meta Pixel ids, and a kill switch for new orders
 - **Reviews** — moderate before anything appears publicly
 
+## Receipts and kitchen tickets
+
+Checkout creates an **itemised Square order** (Orders API) and settles it, rather than posting a
+bare amount to the Payments API. Receipts and Square's item-level reporting therefore show real
+lines — `Spaghetti Plate / Large  $26.00` with `2x Meatball  $8.00` beneath it — instead of one
+opaque total. Delivery rides as a non-taxable service charge and the tip is recorded as a tip.
+
+Two details that are load-bearing:
+
+- **Prices are sent explicitly, not by catalog id.** The admin can change a price in Supabase
+  without re-running the catalog sync; if Square priced from a stale catalog the totals would
+  diverge and the payment would be rejected.
+- **Tax rounds half-to-even** (`roundCents`), because that is what Square does. `Math.round`
+  rounds half *up* and disagrees on any half-cent — a plain Small plate is one ($12.00 x 9.375%
+  = 112.5c) — and a payment whose amount doesn't match its order total is refused.
+
+If Square's total ever disagrees with ours the code logs it and falls back to an unitemised
+payment, so a pricing drift costs you itemisation, never the sale.
+
+**Printing**: `/admin` → any order → **Print ticket**. Styled for an 80mm thermal roll
+(`@page { size: 80mm auto }` in `src/styles.css`) and rendered off-screen, so it needs no popup,
+no extra route and no second fetch. For a 58mm printer, change the two width values there.
+
 ## Proof of delivery
 
 Marking a delivery **Delivered** in the admin opens the phone camera. The photo is optional —

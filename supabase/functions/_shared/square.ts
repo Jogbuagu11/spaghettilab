@@ -58,6 +58,10 @@ export interface ChargeInput {
   verificationToken?: string;
   /** Required by Square when sourceId is a stored card. */
   customerId?: string;
+  /** Settle an itemised order created via createItemizedOrder. */
+  orderId?: string;
+  /** Recorded separately from the order total so Square reports tips as tips. */
+  tipCents?: number;
 }
 
 /** The slice of Square's Payment object we read. */
@@ -90,6 +94,8 @@ export async function createPayment(input: ChargeInput): Promise<ChargeResult> {
       source_id: input.sourceId,
       idempotency_key: input.idempotencyKey,
       amount_money: { amount: input.amountCents, currency: "USD" },
+      ...(input.tipCents ? { tip_money: { amount: input.tipCents, currency: "USD" } } : {}),
+      ...(input.orderId ? { order_id: input.orderId } : {}),
       location_id: requireEnv("SQUARE_LOCATION_ID"),
       reference_id: input.referenceId,
       note: input.note.slice(0, 500),
@@ -197,4 +203,101 @@ export async function forgetCard(cardId: string): Promise<void> {
     // A card that's already gone shouldn't block a cancellation.
     console.warn("could not disable card", cardId, error);
   }
+}
+
+// ------------------------------------------------------ itemised orders ----
+
+export interface ItemisedLine {
+  name: string;
+  variationName?: string;
+  quantity: number;
+  basePriceCents: number;
+  modifiers: { name: string; priceCents: number; quantity: number }[];
+}
+
+export interface ItemisedOrder {
+  orderId: string;
+  /** Square's own total, which the payment must match to the cent. */
+  totalCents: number;
+  taxCents: number;
+}
+
+/**
+ * Creates an itemised Square order so receipts, the Square dashboard and
+ * item-level sales reporting all show real line items instead of one lump sum.
+ *
+ * Prices are sent explicitly rather than by catalog id: the admin can change a
+ * price in Supabase without re-running the catalog sync, and a divergence there
+ * would otherwise make Square compute a different total and reject the payment.
+ *
+ * Tax is left to Square to calculate so it is reported as tax rather than as a
+ * fee. That only works because our rounding matches Square's half-to-even — see
+ * roundCents in catalog.ts — and the caller still verifies the totals agree.
+ */
+export async function createItemizedOrder(input: {
+  referenceId: string;
+  idempotencyKey: string;
+  lines: ItemisedLine[];
+  deliveryFeeCents: number;
+  taxRate: number;
+}): Promise<ItemisedOrder> {
+  const body = await squareFetch("/v2/orders", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: input.idempotencyKey,
+      order: {
+        location_id: requireEnv("SQUARE_LOCATION_ID"),
+        reference_id: input.referenceId,
+        line_items: input.lines.map((line) => ({
+          name: line.name,
+          ...(line.variationName ? { variation_name: line.variationName } : {}),
+          quantity: String(line.quantity),
+          base_price_money: { amount: line.basePriceCents, currency: "USD" },
+          ...(line.modifiers.length
+            ? {
+                modifiers: line.modifiers.map((m) => ({
+                  name: m.name,
+                  base_price_money: { amount: m.priceCents, currency: "USD" },
+                  ...(m.quantity > 1 ? { quantity: String(m.quantity) } : {}),
+                })),
+              }
+            : {}),
+        })),
+        // TOTAL_PHASE + taxable:false keeps delivery outside the tax base,
+        // matching how we price it (California treats a separately stated
+        // delivery charge as non-taxable).
+        ...(input.deliveryFeeCents > 0
+          ? {
+              service_charges: [
+                {
+                  name: "Delivery",
+                  amount_money: { amount: input.deliveryFeeCents, currency: "USD" },
+                  calculation_phase: "TOTAL_PHASE",
+                  taxable: false,
+                },
+              ],
+            }
+          : {}),
+        taxes: [
+          {
+            name: "Sales tax",
+            percentage: (input.taxRate * 100).toFixed(5).replace(/0+$/, "").replace(/\.$/, ""),
+            scope: "ORDER",
+            type: "ADDITIVE",
+          },
+        ],
+      },
+    }),
+  });
+
+  const order = body.order as {
+    id: string;
+    net_amounts: { total_money: { amount: number }; tax_money?: { amount: number } };
+  };
+
+  return {
+    orderId: order.id,
+    totalCents: order.net_amounts.total_money.amount,
+    taxCents: order.net_amounts.tax_money?.amount ?? 0,
+  };
 }

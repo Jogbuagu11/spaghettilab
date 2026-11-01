@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { evaluateFreeDelivery, orderTotals, platePrice, type Plate } from "@/lib/pricing";
+import {
+  evaluateFreeDelivery,
+  orderTotals,
+  platePrice,
+  roundCents,
+  type Plate,
+} from "@/lib/pricing";
 import { availableSlots, canOrderAsap } from "@/lib/schedule";
 
 const plate = (o: Partial<Plate> = {}): Plate => ({
@@ -114,5 +120,37 @@ describe("scheduling", () => {
     expect(canOrderAsap(pst(11, 59))).toBe(false);
     expect(canOrderAsap(pst(13))).toBe(true);
     expect(canOrderAsap(pst(20, 1))).toBe(false);
+  });
+});
+
+// The quote shown at checkout must equal what Square charges to the cent, and
+// Square settles itemised orders using half-to-even rounding. Math.round
+// rounds half up and disagrees on a plain Small plate ($12.00 x 9.375% =
+// 112.5c), which would get the payment rejected.
+describe("tax rounding", () => {
+  it("rounds half to even", () => {
+    expect(roundCents(112.5)).toBe(112);
+    expect(roundCents(113.5)).toBe(114);
+    expect(roundCents(1.5)).toBe(2);
+    expect(roundCents(2.5)).toBe(2);
+  });
+
+  it("rounds normally away from the halfway point", () => {
+    expect(roundCents(112.4)).toBe(112);
+    expect(roundCents(112.6)).toBe(113);
+    expect(roundCents(646.875)).toBe(647);
+  });
+
+  it("agrees with the figures Square returned for real baskets", () => {
+    for (const [subtotal, square] of [
+      [1200, 112],
+      [1800, 169],
+      [2600, 244],
+      [6000, 562],
+      [2000, 188],
+      [16, 2],
+    ] as const) {
+      expect(roundCents(subtotal * 0.09375)).toBe(square);
+    }
   });
 });

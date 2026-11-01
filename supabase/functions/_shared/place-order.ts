@@ -4,7 +4,7 @@ import { sendEmail } from "./emails/send.ts";
 import { kitchenAlert, orderConfirmation, type EmailOrder } from "./emails/templates.ts";
 import { optionalEnv } from "./env.ts";
 import { PublicError } from "./http.ts";
-import { createPayment, type ChargeResult } from "./square.ts";
+import { createItemizedOrder, createPayment, type ChargeResult } from "./square.ts";
 
 export interface DeliveryDetails {
   address: string;
@@ -105,13 +105,53 @@ export async function placeAndChargeOrder(
   try {
     const { error: itemsError } = await db
       .from("order_items")
-      .insert(priced.lines.map((line) => ({ order_id: order.id, ...line })));
+      // `square` is a transport detail for the Orders API, not a column.
+      .insert(
+        priced.lines.map(({ square: _square, ...line }) => ({ order_id: order.id, ...line })),
+      );
     if (itemsError) throw itemsError;
+
+    // Build an itemised Square order first so receipts and Square's reporting
+    // show real line items. If Square's arithmetic disagrees with ours by even
+    // a cent the payment would be rejected, so the total is verified and we
+    // fall back to a plain payment rather than lose the sale.
+    const chargeableBeforeTip = priced.total_cents - priced.tip_cents;
+    let squareOrderId: string | undefined;
+
+    try {
+      const itemised = await createItemizedOrder({
+        referenceId: order.order_number,
+        idempotencyKey: `order-${order.id}`,
+        lines: priced.lines.map((line) => ({
+          name: line.square.name,
+          ...(line.square.variationName ? { variationName: line.square.variationName } : {}),
+          quantity: line.quantity,
+          basePriceCents: line.square.basePriceCents,
+          modifiers: line.square.modifiers,
+        })),
+        deliveryFeeCents: priced.delivery_fee_cents,
+        taxRate: priced.tax_rate,
+      });
+
+      if (itemised.totalCents === chargeableBeforeTip) {
+        squareOrderId = itemised.orderId;
+      } else {
+        console.error(
+          `square order total ${itemised.totalCents} != ours ${chargeableBeforeTip} ` +
+            `for ${order.order_number}; falling back to an unitemised payment`,
+        );
+      }
+    } catch (orderError) {
+      console.error("itemised order failed, falling back", orderError);
+    }
 
     const charge = await createPayment({
       sourceId: input.payment.sourceId,
       customerId: input.payment.customerId,
-      amountCents: priced.total_cents,
+      // When settling an order, Square expects the order total here and the
+      // tip separately; without one, the whole amount goes on the payment.
+      amountCents: squareOrderId ? chargeableBeforeTip : priced.total_cents,
+      ...(squareOrderId ? { orderId: squareOrderId, tipCents: priced.tip_cents } : {}),
       idempotencyKey: order.id,
       referenceId: order.order_number,
       note: `Spaghetti Lab ${order.order_number} (${input.cart.fulfillment})`,

@@ -102,7 +102,9 @@
   --sidebar-border: oklch(0.88 0.03 75);
   --sidebar-ring: oklch(0.58 0.2 32);
   --ink: oklch(0.24 0.03 35);
-  --gradient-hero: radial-gradient(circle at 80% 20%, oklch(0.9 0.08 140 / 0.6), transparent 50%), radial-gradient(circle at 10% 90%, oklch(0.85 0.1 40 / 0.5), transparent 45%);
+  --gradient-hero:
+    radial-gradient(circle at 80% 20%, oklch(0.9 0.08 140 / 0.6), transparent 50%),
+    radial-gradient(circle at 10% 90%, oklch(0.85 0.1 40 / 0.5), transparent 45%);
   --shadow-pop: 4px 4px 0 0 var(--ink);
   --shadow-pop-sm: 2px 2px 0 0 var(--ink);
 }
@@ -119,11 +121,20 @@
 }
 
 @layer base {
-  body { font-family: var(--font-sans); }
-  h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
+  body {
+    font-family: var(--font-sans);
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
 }
 
-@utility bg-hero { background-image: var(--gradient-hero); }
+@utility bg-hero {
+  background-image: var(--gradient-hero);
+}
 @utility lab-card {
   background: var(--card);
   border: 2px solid var(--ink);
@@ -137,11 +148,91 @@
   letter-spacing: 0.12em;
 }
 @utility chip {
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
-  min-height: 2.75rem; padding: 0.5rem 0.9rem;
-  border: 2px solid var(--ink); border-radius: 999px;
-  background: var(--card); font-weight: 600; font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.9rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font-weight: 600;
+  font-size: 0.9rem;
   transition: transform 120ms;
-  &[data-active="true"] { background: var(--primary); color: var(--primary-foreground); box-shadow: var(--shadow-pop-sm); }
-  &:active { transform: translateY(1px); }
+  &[data-active="true"] {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    box-shadow: var(--shadow-pop-sm);
+  }
+  &:active {
+    transform: translateY(1px);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Kitchen ticket printing.
+ *
+ * Targets an 80mm thermal roll (72mm printable). `visibility` rather than
+ * `display` is deliberate: it hides the app without collapsing the layout the
+ * ticket is positioned against, which is what breaks naive print styles.
+ * ------------------------------------------------------------------------- */
+.print-ticket {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: 80mm auto; /* auto height — the roll cuts to content */
+    margin: 3mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    width: 74mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+  .print-ticket,
+  .print-ticket * {
+    visibility: visible;
+  }
+
+  .print-ticket {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 74mm;
+    /* Thermal heads render a condensed mono far more crisply than a webfont. */
+    font-family: "JetBrains Mono", ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #000;
+  }
+
+  .print-ticket .rule {
+    border-top: 1px dashed #000;
+    margin: 5px 0;
+  }
+  .print-ticket .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .print-ticket .big {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .print-ticket .huge {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .print-ticket .mod {
+    padding-left: 10px;
+  }
 }

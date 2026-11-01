@@ -87,6 +87,18 @@ export interface CartInput {
   fulfillment: "pickup" | "delivery";
 }
 
+/**
+ * How a line is expressed to Square: a base item plus priced modifiers rather
+ * than one collapsed amount. This is what makes Square receipts and the kitchen
+ * ticket itemise by size and topping instead of printing a single total.
+ */
+export interface SquareLineBreakdown {
+  name: string;
+  variationName?: string;
+  basePriceCents: number;
+  modifiers: { name: string; priceCents: number; quantity: number }[];
+}
+
 export interface PricedLine {
   kind: "plate" | "extra";
   label: string;
@@ -95,6 +107,7 @@ export interface PricedLine {
   total_price_cents: number;
   config: Record<string, unknown>;
   sort_order: number;
+  square: SquareLineBreakdown;
 }
 
 /** Context the delivery-fee rule needs beyond the cart itself. */
@@ -160,6 +173,24 @@ export function evaluateFreeDelivery(
   return { ...base, free: false, reason: "needs_spend", shortfall_cents: shortfall };
 }
 
+/**
+ * Rounds half to even ("banker's rounding").
+ *
+ * This matches Square's tax arithmetic, and that match is load-bearing: when
+ * an order is paid through the Orders API the payment amount must equal the
+ * order total exactly. Math.round rounds half *up*, which disagrees with
+ * Square on any half-cent — a plain Small plate is one ($12.00 x 9.375% =
+ * 112.5c, where we'd have said 113 and Square says 112) and the payment would
+ * be rejected.
+ */
+export function roundCents(value: number): number {
+  const floor = Math.floor(value);
+  const remainder = value - floor;
+  if (remainder > 0.5) return floor + 1;
+  if (remainder < 0.5) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
 const MAX_PLATES = 20;
 const MAX_QTY = 20;
 
@@ -206,6 +237,9 @@ export function priceOrder(
 
     let price = size.price_cents + heat.price_cents;
     const parts: string[] = [heat.label];
+    const modifiers: SquareLineBreakdown["modifiers"] = [
+      { name: heat.label, priceCents: heat.price_cents, quantity: 1 },
+    ];
 
     const proteins: Record<string, number> = {};
     for (const [id, rawQty] of Object.entries(plate.proteins ?? {})) {
@@ -215,6 +249,7 @@ export function priceOrder(
       proteins[id] = qty;
       price += protein.price_cents * qty;
       parts.push(qty > 1 ? `${qty}x ${protein.label}` : protein.label);
+      modifiers.push({ name: protein.label, priceCents: protein.price_cents, quantity: qty });
     }
 
     const customizations: string[] = [];
@@ -224,6 +259,7 @@ export function priceOrder(
       customizations.push(custom.id);
       price += custom.price_cents;
       parts.push(custom.label);
+      modifiers.push({ name: custom.label, priceCents: custom.price_cents, quantity: 1 });
     }
 
     lines.push({
@@ -240,6 +276,12 @@ export function priceOrder(
         summary: parts.join(" · "),
       },
       sort_order: sort++,
+      square: {
+        name: "Spaghetti Plate",
+        variationName: size.label,
+        basePriceCents: size.price_cents,
+        modifiers,
+      },
     });
     subtotal += price;
   }
@@ -257,6 +299,7 @@ export function priceOrder(
       total_price_cents: total,
       config: { id: extra.id },
       sort_order: sort++,
+      square: { name: extra.label, basePriceCents: extra.price_cents, modifiers: [] },
     });
     subtotal += total;
   }
@@ -267,7 +310,7 @@ export function priceOrder(
 
   // Tax applies to food, not the delivery fee or the tip (California treats a
   // separately stated delivery charge as non-taxable).
-  const tax = Math.round(subtotal * settings.tax_rate);
+  const tax = roundCents(subtotal * settings.tax_rate);
 
   const tip = Number.isInteger(tipCents) && tipCents >= 0 ? Math.min(tipCents, subtotal * 2) : 0;
 
