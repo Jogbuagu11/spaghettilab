@@ -12,7 +12,9 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { Analytics } from "../components/site/Analytics";
 import { CartProvider } from "../lib/cart";
+import { OG_IMAGE, SITE, SITE_URL } from "../lib/seo";
 import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
@@ -80,22 +82,43 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Spaghetti Lab" },
-      { name: "description", content: "Fresh spaghetti pickup & delivery in Berryessa, San Jose." },
-      { property: "og:site_name", content: "Spaghetti Lab" },
+      { title: "Spaghetti Lab — Fresh Spaghetti, Built Your Way | San Jose" },
+      {
+        name: "description",
+        content:
+          "Build your own spaghetti plate and get it in about 15 minutes. Pickup in Berryessa or delivery within 5 miles of 95131, San Jose.",
+      },
+
+      // Defaults for any page that doesn't set its own; pageMeta() overrides these.
+      { property: "og:site_name", content: SITE },
       { property: "og:type", content: "website" },
+      { property: "og:url", content: SITE_URL },
+      { property: "og:image", content: OG_IMAGE },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { property: "og:locale", content: "en_US" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "theme-color", content: "#d9412b" },
+      { name: "twitter:image", content: OG_IMAGE },
+
+      { name: "theme-color", content: "#D7371D" },
+      { name: "apple-mobile-web-app-title", content: "Spaghetti Lab" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "format-detection", content: "telephone=no" },
     ],
     links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "stylesheet", href: appCss },
+
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "icon", href: "/favicon-96x96.png", type: "image/png", sizes: "96x96" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
+      { rel: "manifest", href: "/site.webmanifest" },
+
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -127,6 +150,7 @@ function RootComponent() {
       <CartProvider>
         <Outlet />
         <Toaster position="top-center" />
+        <Analytics />
       </CartProvider>
     </QueryClientProvider>
   );

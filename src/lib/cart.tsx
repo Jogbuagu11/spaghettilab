@@ -12,6 +12,8 @@ interface CartCtx extends CartState {
   removePlate: (id: string) => void;
   setExtra: (id: ExtraId, qty: number) => void;
   setFulfillment: (f: Fulfillment) => void;
+  /** Emptied once an order is placed and paid. */
+  clear: () => void;
   open: boolean;
   setOpen: (o: boolean) => void;
   count: number;
@@ -37,8 +39,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (loaded) localStorage.setItem(KEY, JSON.stringify(state));
   }, [state, loaded]);
 
-  const count =
-    state.plates.length + Object.values(state.extras).reduce((s, n) => s + (n ?? 0), 0);
+  const count = state.plates.length + Object.values(state.extras).reduce((s, n) => s + (n ?? 0), 0);
 
   return (
     <Ctx.Provider
@@ -49,10 +50,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
         setOpen,
         addPlate: (p) =>
           setState((s) => ({ ...s, plates: [...s.plates, { ...p, id: crypto.randomUUID() }] })),
-        removePlate: (id) => setState((s) => ({ ...s, plates: s.plates.filter((p) => p.id !== id) })),
+        removePlate: (id) =>
+          setState((s) => ({ ...s, plates: s.plates.filter((p) => p.id !== id) })),
         setExtra: (id, qty) =>
           setState((s) => ({ ...s, extras: { ...s.extras, [id]: Math.max(0, qty) } })),
         setFulfillment: (fulfillment) => setState((s) => ({ ...s, fulfillment })),
+        clear: () => setState((s) => ({ ...empty, fulfillment: s.fulfillment })),
       }}
     >
       {children}

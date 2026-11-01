@@ -12,3 +12,11 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+# Checkout and order pages carry personal data and are noindex anyway.
+Disallow: /order
+Disallow: /track
+Disallow: /review
+Disallow: /admin
+
+Sitemap: https://spaghettilab.store/sitemap.xml

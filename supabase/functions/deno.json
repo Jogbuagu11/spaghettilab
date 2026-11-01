@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@^2.118.0"
+  },
+  "nodeModulesDir": "auto",
+  "lint": {
+    "rules": { "tags": ["recommended"] }
+  }
+}

@@ -40,3 +40,55 @@ export const CLOSE_HOUR = 20;
 export const PREP_MINUTES = 15;
 
 export const formatMoney = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+// ---------------------------------------------------------------------------
+// Live menu
+//
+// The arrays above are the build-time defaults. At runtime the storefront
+// overlays the `menu_options` and `settings` rows from Supabase (see
+// `src/lib/storefront.ts`) so the admin can change a price or flag something
+// sold out without a deploy. Checkout re-prices against those same rows
+// server-side, so these values are only ever used for display.
+// ---------------------------------------------------------------------------
+
+export interface MenuItem {
+  id: string;
+  label: string;
+  description?: string | null;
+  price: number;
+  available: boolean;
+}
+
+export interface MenuData {
+  sizes: MenuItem[];
+  heat: MenuItem[];
+  proteins: MenuItem[];
+  customizations: MenuItem[];
+  extras: MenuItem[];
+  taxRate: number;
+  deliveryFee: number;
+  freeDeliveryOver: number;
+  prepMinutes: number;
+  acceptingOrders: boolean;
+  closedMessage: string;
+}
+
+const toItems = (xs: ReadonlyArray<{ id: string; label: string; price?: number }>): MenuItem[] =>
+  xs.map((x) => ({ id: x.id, label: x.label, price: x.price ?? 0, available: true }));
+
+export const STATIC_MENU: MenuData = {
+  sizes: toItems(SIZES),
+  heat: toItems(HEAT),
+  proteins: toItems(PROTEINS),
+  customizations: toItems(CUSTOMIZATIONS),
+  extras: toItems(EXTRAS),
+  taxRate: DEFAULT_TAX_RATE,
+  deliveryFee: DELIVERY_FEE,
+  freeDeliveryOver: FREE_DELIVERY_OVER,
+  prepMinutes: PREP_MINUTES,
+  acceptingOrders: true,
+  closedMessage: "We're not taking orders right now — check back soon!",
+};
+
+export const findItem = (items: MenuItem[], id: string): MenuItem | undefined =>
+  items.find((i) => i.id === id);

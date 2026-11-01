@@ -10,5 +10,22 @@
 <!-- LOVABLE:END -->
 
 ## Project rules
-- Menu prices, fees and hours live in `src/lib/menu.ts`; totals in `src/lib/pricing.ts`, time slots in `src/lib/schedule.ts` (America/Los_Angeles) — one source so UI and future server validation agree; covered by `src/test/rules.test.ts`.
-- Cart state is client-side (`src/lib/cart.tsx`, localStorage) until orders move to the backend.
+
+- **Prices are never trusted from the browser.** The client sends selections only; the
+  `create-order` edge function re-prices the whole cart from `menu_options` + `settings`
+  (`supabase/functions/_shared/catalog.ts`) before charging Square. Never add a code path that
+  reads a total, price or fee from the request body.
+- **Source of truth for the menu is Supabase.** `src/lib/menu.ts` holds build-time defaults that
+  the storefront uses as a fallback; `src/lib/storefront.ts` overlays the live rows. When you add
+  a menu field, add it to the migration, `MenuData`, and the admin Menu tab.
+- **Money is integer cents everywhere** — database, edge functions, and UI. Never floats.
+- Time handling is America/Los_Angeles. Use the helpers in `src/lib/schedule.ts` (client) and
+  `supabase/functions/_shared/schedule.ts` (server); both are DST-correct and tested.
+- Orders are reachable only via a `track_token`, and the pickup address is withheld until an
+  order is paid (column-level grant in `20261101000200_rls.sql`). Don't widen either.
+- Secrets live in Supabase function secrets / Vercel env vars. Nothing secret goes in a
+  migration, and only `VITE_*` values may reach the bundle.
+- Tests: `bun run test` for the frontend, `deno test --allow-env supabase/functions/_shared/`
+  for pricing and scheduling. Both must pass before shipping.
+- Brand assets are generated from `brand/logo-source.png` by
+  `scripts/generate-brand-assets.mjs` — edit the source, re-run, don't hand-edit the outputs.
