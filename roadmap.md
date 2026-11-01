@@ -31,6 +31,12 @@
 - [x] Tax rounding aligned with Square's half-to-even
 - [x] 80mm thermal kitchen ticket from /admin
 
+## Phase 7 — WhatsApp ordering (built, needs credentials)
+- [x] Order Flow generated from the live menu, published via script
+- [x] whatsapp-webhook: Flow submission -> priced order -> Square payment link
+- [x] square-webhook completes link-paid orders into the normal pipeline
+- [ ] Meta credentials + webhook subscription (owner)
+
 ## Still needs the owner
 - [x] Supabase project linked, migrations applied, admin user seeded
 - [x] spaghettilab.store verified in Resend
@@ -47,7 +53,8 @@
 - [ ] Switch Square from sandbox to production once test orders look right
 
 ## Later
-- [ ] SMS order updates (Twilio) — email only today
+- [ ] Outbound WhatsApp order updates (templates need Meta approval)
+- [ ] SMS order updates — no provider connected
 - [ ] Delivery photo is admin-captured; no separate driver app or login
 - [ ] Printed kitchen tickets / receipt printer
 - [ ] Loyalty or repeat-order discounts

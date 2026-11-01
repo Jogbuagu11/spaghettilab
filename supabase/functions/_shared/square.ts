@@ -301,3 +301,96 @@ export async function createItemizedOrder(input: {
     taxCents: order.net_amounts.tax_money?.amount ?? 0,
   };
 }
+
+// ------------------------------------------------------- payment links ----
+
+export interface PaymentLink {
+  url: string;
+  linkId: string;
+  orderId: string;
+  totalCents: number;
+}
+
+/**
+ * Square-hosted checkout for an order placed somewhere we can't collect a card
+ * — currently a WhatsApp Flow. Builds the same itemised order as web checkout,
+ * so the receipt and reporting look identical however the order arrived.
+ */
+export async function createPaymentLink(input: {
+  referenceId: string;
+  idempotencyKey: string;
+  lines: ItemisedLine[];
+  deliveryFeeCents: number;
+  taxRate: number;
+  buyerEmail?: string;
+  buyerPhone?: string;
+  description: string;
+  redirectUrl?: string;
+}): Promise<PaymentLink> {
+  const body = await squareFetch("/v2/online-checkout/payment-links", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: input.idempotencyKey,
+      description: input.description,
+      order: {
+        location_id: requireEnv("SQUARE_LOCATION_ID"),
+        reference_id: input.referenceId,
+        line_items: input.lines.map((line) => ({
+          name: line.name,
+          ...(line.variationName ? { variation_name: line.variationName } : {}),
+          quantity: String(line.quantity),
+          base_price_money: { amount: line.basePriceCents, currency: "USD" },
+          ...(line.modifiers.length
+            ? {
+                modifiers: line.modifiers.map((m) => ({
+                  name: m.name,
+                  base_price_money: { amount: m.priceCents, currency: "USD" },
+                  ...(m.quantity > 1 ? { quantity: String(m.quantity) } : {}),
+                })),
+              }
+            : {}),
+        })),
+        ...(input.deliveryFeeCents > 0
+          ? {
+              service_charges: [
+                {
+                  name: "Delivery",
+                  amount_money: { amount: input.deliveryFeeCents, currency: "USD" },
+                  calculation_phase: "TOTAL_PHASE",
+                  taxable: false,
+                },
+              ],
+            }
+          : {}),
+        taxes: [
+          {
+            name: "Sales tax",
+            percentage: (input.taxRate * 100).toFixed(5).replace(/0+$/, "").replace(/\.$/, ""),
+            scope: "ORDER",
+            type: "ADDITIVE",
+          },
+        ],
+      },
+      checkout_options: {
+        allow_tipping: true,
+        ask_for_shipping_address: false,
+        ...(input.redirectUrl ? { redirect_url: input.redirectUrl } : {}),
+      },
+      pre_populated_data: {
+        ...(input.buyerEmail ? { buyer_email: input.buyerEmail } : {}),
+        ...(input.buyerPhone ? { buyer_phone_number: input.buyerPhone } : {}),
+      },
+    }),
+  });
+
+  const link = body.payment_link as { id: string; url: string; order_id: string };
+  const related = body.related_resources as
+    { orders?: { net_amounts?: { total_money?: { amount?: number } } }[] } | undefined;
+
+  return {
+    url: link.url,
+    linkId: link.id,
+    orderId: link.order_id,
+    totalCents: related?.orders?.[0]?.net_amounts?.total_money?.amount ?? 0,
+  };
+}

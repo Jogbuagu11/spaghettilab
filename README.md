@@ -264,6 +264,48 @@ payment, so a pricing drift costs you itemisation, never the sale.
 (`@page { size: 80mm auto }` in `src/styles.css`) and rendered off-screen, so it needs no popup,
 no extra route and no second fetch. For a 58mm printer, change the two width values there.
 
+## Ordering from WhatsApp
+
+Customers can order without leaving WhatsApp. A **Flow** (Meta's in-chat form) walks them
+through size, quantity, heat, proteins, add-ons, sides, pickup-or-delivery and their details;
+submitting it hits `whatsapp-webhook`, which re-prices the basket server-side with the same
+`priceOrder` the website uses, writes a real `pending_payment` order, and replies with a Square
+checkout link. When they pay, `square-webhook` flips the order to paid and the usual machinery
+runs — kitchen ticket, `/track`, confirmation email, delivery photo.
+
+```
+Flow submitted ─▶ whatsapp-webhook ─▶ priceOrder ─▶ pending order
+                                                  └─▶ Square payment link ─▶ chat
+                        customer pays ─▶ square-webhook ─▶ paid ─▶ ticket + emails
+```
+
+Nothing is charged until they follow the link, so an abandoned chat leaves an unpaid order
+rather than a surprise charge.
+
+Publish or refresh the Flow after any menu change:
+
+```sh
+node scripts/whatsapp-flow-publish.mjs --dry-run   # inspect the JSON
+node scripts/whatsapp-flow-publish.mjs             # create/update + publish
+```
+
+The Flow has **no data endpoint** — the menu is baked into the JSON (Flow JSON 7.3), which
+avoids implementing Meta's encrypted endpoint for a small, slow-moving menu. Sold-out options
+are filtered out at generation time. Prices shown in chat are cosmetic; the server re-prices on
+submission, so a stale Flow can misinform but can never mischarge.
+
+**Known limit:** Flows can't repeat a section, so a chat order is one plate configuration plus a
+quantity. Two *different* plates means ordering twice or using the website.
+
+Deploy the webhook unauthenticated — Meta has no Supabase JWT:
+
+```sh
+supabase functions deploy whatsapp-webhook --no-verify-jwt
+```
+
+Then point Meta's webhook at `https://YOUR-PROJECT-REF.supabase.co/functions/v1/whatsapp-webhook`,
+subscribe to `messages`, and use the same `WHATSAPP_VERIFY_TOKEN` for the handshake.
+
 ## Proof of delivery
 
 Marking a delivery **Delivered** in the admin opens the phone camera. The photo is optional —

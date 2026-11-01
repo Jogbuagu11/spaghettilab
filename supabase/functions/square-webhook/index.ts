@@ -5,8 +5,11 @@
  * issued from the Square dashboard, a delayed capture, a dispute. The endpoint
  * is public, so every request is HMAC-verified before it is trusted.
  */
+import { loadCatalog } from "../_shared/catalog.ts";
 import { serviceClient } from "../_shared/db.ts";
-import { requireEnv, SITE_URL } from "../_shared/env.ts";
+import { sendEmail } from "../_shared/emails/send.ts";
+import { kitchenAlert, orderConfirmation, type EmailOrder } from "../_shared/emails/templates.ts";
+import { optionalEnv, requireEnv, SITE_URL } from "../_shared/env.ts";
 import type { SquarePaymentResponse } from "../_shared/square.ts";
 
 interface SquareWebhookEvent {
@@ -73,8 +76,16 @@ Deno.serve(async (req) => {
   const type = event.type;
 
   try {
-    if (type === "payment.updated") {
+    if (type === "payment.updated" || type === "payment.created") {
       const payment = event.data?.object?.payment;
+
+      // Orders started in WhatsApp are paid through a Square-hosted link, so
+      // this webhook is their only completion path — there's no browser to
+      // return a token to us. Match on the order id the link was created with.
+      if (payment?.id && payment.order_id && payment.status === "COMPLETED") {
+        await completeLinkPaidOrder(db, payment);
+      }
+
       if (payment?.id) {
         const refundedCents = payment.refunded_money?.amount ?? 0;
         const patch: Record<string, unknown> = {
@@ -112,3 +123,85 @@ Deno.serve(async (req) => {
     headers: { "content-type": "application/json" },
   });
 });
+
+/**
+ * Finishes an order that was paid through a Square payment link.
+ *
+ * Only touches rows still awaiting payment, so a repeated webhook — Square
+ * retries freely — can't re-send receipts or overwrite a later status set by
+ * the kitchen. The email helper is idempotent on top of that.
+ */
+async function completeLinkPaidOrder(
+  db: ReturnType<typeof serviceClient>,
+  payment: SquarePaymentResponse,
+): Promise<void> {
+  const { data: order } = await db
+    .from("orders")
+    .select("id")
+    .eq("square_order_id", payment.order_id!)
+    .eq("status", "pending_payment")
+    .maybeSingle();
+
+  if (!order) return;
+
+  const tipCents =
+    (payment as unknown as { tip_money?: { amount?: number } }).tip_money?.amount ?? 0;
+  const totalCents =
+    (payment as unknown as { total_money?: { amount?: number } }).total_money?.amount ?? 0;
+
+  const { data: updated } = await db
+    .from("orders")
+    .update({
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      square_payment_id: payment.id,
+      square_receipt_url: payment.receipt_url ?? null,
+      card_brand: payment.card_details?.card?.card_brand ?? null,
+      card_last4: payment.card_details?.card?.last_4 ?? null,
+      // The hosted page collects the tip, so the totals are only known now.
+      ...(tipCents ? { tip_cents: tipCents } : {}),
+      ...(totalCents ? { total_cents: totalCents } : {}),
+      payment_link_url: null,
+    })
+    .eq("id", order.id)
+    .eq("status", "pending_payment")
+    .select("*")
+    .single();
+
+  if (!updated) return;
+
+  const { data: items } = await db
+    .from("order_items")
+    .select("label, quantity, unit_price_cents, total_price_cents, config, sort_order")
+    .eq("order_id", order.id)
+    .order("sort_order");
+
+  const catalog = await loadCatalog(db);
+  const ctx = {
+    pickupAddress: catalog.settings.pickup_address,
+    contactPhone: catalog.settings.contact_phone,
+    googleReviewUrl: catalog.settings.google_review_url,
+  };
+  const emailOrder = { ...updated, items: items ?? [] } as EmailOrder;
+  const kitchen = optionalEnv("KITCHEN_EMAIL");
+
+  await Promise.allSettled([
+    sendEmail(db, {
+      to: updated.customer_email,
+      email: orderConfirmation(emailOrder, ctx),
+      template: "order_confirmation",
+      orderId: order.id,
+      once: true,
+    }),
+    kitchen
+      ? sendEmail(db, {
+          to: kitchen,
+          email: kitchenAlert(emailOrder, ctx),
+          template: "kitchen_alert",
+          orderId: order.id,
+          once: true,
+          replyTo: updated.customer_email,
+        })
+      : Promise.resolve(false),
+  ]);
+}

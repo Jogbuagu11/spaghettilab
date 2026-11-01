@@ -2,9 +2,15 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@^2.118.0";
 import { priceOrder, type Catalog, type CartInput, type PricedOrder } from "./catalog.ts";
 import { sendEmail } from "./emails/send.ts";
 import { kitchenAlert, orderConfirmation, type EmailOrder } from "./emails/templates.ts";
-import { optionalEnv } from "./env.ts";
+import { optionalEnv, SITE_URL } from "./env.ts";
 import { PublicError } from "./http.ts";
-import { createItemizedOrder, createPayment, type ChargeResult } from "./square.ts";
+import {
+  createItemizedOrder,
+  createPayment,
+  createPaymentLink,
+  type ChargeResult,
+  type ItemisedLine,
+} from "./square.ts";
 
 export interface DeliveryDetails {
   address: string;
@@ -228,4 +234,112 @@ async function notify(
         })
       : Promise.resolve(false),
   ]);
+}
+
+/** The line shape both Square helpers expect, derived from our priced lines. */
+function toSquareLines(priced: PricedOrder): ItemisedLine[] {
+  return priced.lines.map((line) => ({
+    name: line.square.name,
+    ...(line.square.variationName ? { variationName: line.square.variationName } : {}),
+    quantity: line.quantity,
+    basePriceCents: line.square.basePriceCents,
+    modifiers: line.square.modifiers,
+  }));
+}
+
+export interface PendingOrderInput {
+  cart: CartInput;
+  customer: { name: string; email: string; phone: string };
+  delivery: DeliveryDetails | null;
+  readyAt: Date;
+  scheduledFor: Date | null;
+  note: string | null;
+  now: Date;
+  channel: "web" | "whatsapp";
+  whatsappPhone?: string;
+}
+
+export interface PendingOrder {
+  order: Record<string, unknown>;
+  priced: PricedOrder;
+  paymentUrl: string;
+}
+
+/**
+ * Creates an unpaid order and a Square-hosted checkout link for it.
+ *
+ * Used where we can't collect a card inline — a WhatsApp Flow submission. The
+ * order is real and priced server-side the moment it's created, so the kitchen
+ * and /track have something to point at; the Square webhook flips it to paid
+ * when the customer follows the link.
+ *
+ * No confirmation email goes out here: nothing has been paid yet, and a
+ * receipt for an unpaid order would be misleading.
+ */
+export async function createPendingOrder(
+  db: SupabaseClient,
+  catalog: Catalog,
+  input: PendingOrderInput,
+): Promise<PendingOrder> {
+  const priced = priceOrder(catalog, input.cart, 0, {
+    scheduledFor: input.scheduledFor,
+    now: input.now,
+  });
+
+  const { data: order, error } = await db
+    .from("orders")
+    .insert({
+      status: "pending_payment",
+      channel: input.channel,
+      whatsapp_phone: input.whatsappPhone ?? null,
+      fulfillment: input.cart.fulfillment,
+      customer_name: input.customer.name,
+      customer_email: input.customer.email,
+      customer_phone: input.customer.phone,
+      delivery_address: input.delivery?.address ?? null,
+      delivery_lat: input.delivery?.lat ?? null,
+      delivery_lng: input.delivery?.lng ?? null,
+      delivery_distance_mi: input.delivery?.distanceMi ?? null,
+      scheduled_for: input.scheduledFor?.toISOString() ?? null,
+      ready_at: input.readyAt.toISOString(),
+      subtotal_cents: priced.subtotal_cents,
+      delivery_fee_cents: priced.delivery_fee_cents,
+      tax_cents: priced.tax_cents,
+      tip_cents: 0,
+      total_cents: priced.total_cents,
+      tax_rate: priced.tax_rate,
+      customer_note: input.note,
+    })
+    .select("id, order_number, track_token")
+    .single();
+
+  if (error || !order) throw error ?? new Error("pending order insert failed");
+
+  const { error: itemsError } = await db
+    .from("order_items")
+    .insert(priced.lines.map(({ square: _square, ...line }) => ({ order_id: order.id, ...line })));
+  if (itemsError) throw itemsError;
+
+  const link = await createPaymentLink({
+    referenceId: order.order_number,
+    idempotencyKey: `link-${order.id}`,
+    lines: toSquareLines(priced),
+    deliveryFeeCents: priced.delivery_fee_cents,
+    taxRate: priced.tax_rate,
+    buyerEmail: input.customer.email,
+    buyerPhone: input.customer.phone,
+    description: `Spaghetti Lab ${order.order_number}`,
+    redirectUrl: `${SITE_URL}/track?token=${order.track_token}&new=true`,
+  });
+
+  await db
+    .from("orders")
+    .update({
+      square_order_id: link.orderId,
+      payment_link_url: link.url,
+      payment_link_id: link.linkId,
+    })
+    .eq("id", order.id);
+
+  return { order, priced, paymentUrl: link.url };
 }
