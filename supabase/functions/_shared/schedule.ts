@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessHour, Catalog } from "./catalog.ts";
 import { PublicError } from "./http.ts";
 
@@ -83,6 +84,22 @@ export function hoursFor(
   };
 }
 
+/**
+ * Days since the epoch *in the kitchen's timezone*. Subtracting two of these
+ * gives calendar days of notice, which is what "order a day ahead" means to a
+ * customer — 7pm Monday for noon Tuesday counts, even though it's under 24h.
+ */
+export function kitchenDayIndex(at: Date): number {
+  const p = kitchenParts(at);
+  return Math.floor(Date.UTC(p.year, p.month - 1, p.day) / 86_400_000);
+}
+
+/** Calendar days of notice between now and a scheduled time. ASAP is 0. */
+export function leadDays(scheduledFor: Date | null, now: Date): number {
+  if (!scheduledFor) return 0;
+  return Math.max(0, kitchenDayIndex(scheduledFor) - kitchenDayIndex(now));
+}
+
 export interface ResolvedTime {
   readyAt: Date;
   scheduledFor: Date | null;
@@ -154,4 +171,58 @@ export function formatReadyAt(at: Date): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(at);
+}
+
+export type ScheduleExceptions = Map<
+  string,
+  { is_closed: boolean; open_minute: number | null; close_minute: number | null }
+>;
+
+/** One-off closures and shortened days, keyed by the yyyy-mm-dd kitchen date. */
+export async function loadExceptions(db: SupabaseClient): Promise<ScheduleExceptions> {
+  const { data } = await db
+    .from("schedule_exceptions")
+    .select("exception_date, is_closed, open_minute, close_minute");
+
+  return new Map(
+    (data ?? []).map((row) => [
+      row.exception_date as string,
+      {
+        is_closed: row.is_closed as boolean,
+        open_minute: row.open_minute as number | null,
+        close_minute: row.close_minute as number | null,
+      },
+    ]),
+  );
+}
+
+/** yyyy-mm-dd for a kitchen-local date, the form the date columns store. */
+export function kitchenDateKey(at: Date): string {
+  const p = kitchenParts(at);
+  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+}
+
+/**
+ * The next kitchen date falling on `dayOfWeek` that is at least `minLeadDays`
+ * away — used to pick when a weekly standing order first runs, and to advance
+ * it afterwards. Returns a yyyy-mm-dd key.
+ */
+export function nextWeeklyDate(dayOfWeek: number, from: Date, minLeadDays = 1): string {
+  const start = kitchenParts(from);
+  // Walk forward a day at a time; cheap, and sidesteps DST arithmetic entirely.
+  for (let offset = minLeadDays; offset <= minLeadDays + 7; offset++) {
+    const candidate = new Date(Date.UTC(start.year, start.month - 1, start.day + offset, 12));
+    const parts = kitchenParts(candidate);
+    const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
+    if (weekday === dayOfWeek) {
+      return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+    }
+  }
+  throw new Error("could not find a weekly date");
+}
+
+/** Turns a stored yyyy-mm-dd + minute-of-day into a real instant. */
+export function dateKeyToInstant(dateKey: string, minute: number): Date {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return kitchenTimeToUtc(y!, m!, d!, minute);
 }

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PublicError } from "./http.ts";
+import { leadDays } from "./schedule.ts";
 
 export interface MenuOption {
   id: string;
@@ -15,6 +16,8 @@ export interface Settings {
   tax_rate: number;
   delivery_fee_cents: number;
   free_delivery_over_cents: number;
+  free_delivery_min_lead_days: number;
+  subscription_free_delivery: boolean;
   prep_minutes: number;
   slot_interval_minutes: number;
   delivery_radius_miles: number;
@@ -61,6 +64,7 @@ export async function loadCatalog(db: SupabaseClient): Promise<Catalog> {
       ...(settings.data as Settings),
       tax_rate: Number(settings.data.tax_rate),
       delivery_radius_miles: Number(settings.data.delivery_radius_miles),
+      free_delivery_min_lead_days: Number(settings.data.free_delivery_min_lead_days ?? 1),
       origin_lat: Number(settings.data.origin_lat),
       origin_lng: Number(settings.data.origin_lng),
     },
@@ -93,6 +97,15 @@ export interface PricedLine {
   sort_order: number;
 }
 
+/** Context the delivery-fee rule needs beyond the cart itself. */
+export interface DeliveryTiming {
+  /** When the food is due. null means ASAP. */
+  scheduledFor: Date | null;
+  now: Date;
+  /** Weekly standing orders can skip the fee regardless of basket size. */
+  isSubscription?: boolean;
+}
+
 export interface PricedOrder {
   lines: PricedLine[];
   subtotal_cents: number;
@@ -101,6 +114,50 @@ export interface PricedOrder {
   tip_cents: number;
   total_cents: number;
   tax_rate: number;
+  /** Why delivery was or wasn't free — surfaced to the UI, not just the total. */
+  free_delivery: FreeDeliveryResult;
+}
+
+export interface FreeDeliveryResult {
+  free: boolean;
+  reason: "pickup" | "subscription" | "earned" | "needs_lead_time" | "needs_spend" | "needs_both";
+  /** Cents still needed to reach the spend threshold, 0 once met. */
+  shortfall_cents: number;
+  lead_days_required: number;
+}
+
+/**
+ * Free delivery now takes planning, not just a big basket: the order must
+ * clear the spend threshold *and* be scheduled far enough ahead. Weekly
+ * standing orders bypass both. Setting free_delivery_min_lead_days to 0
+ * restores the old size-only rule.
+ */
+export function evaluateFreeDelivery(
+  subtotal: number,
+  settings: Settings,
+  fulfillment: "pickup" | "delivery",
+  timing: DeliveryTiming,
+): FreeDeliveryResult {
+  const required = settings.free_delivery_min_lead_days;
+  const base = { lead_days_required: required, shortfall_cents: 0 };
+
+  if (fulfillment === "pickup") return { ...base, free: true, reason: "pickup" };
+
+  if (timing.isSubscription && settings.subscription_free_delivery) {
+    return { ...base, free: true, reason: "subscription" };
+  }
+
+  // "$60 and over" is inclusive.
+  const spendMet = subtotal >= settings.free_delivery_over_cents;
+  const leadMet = leadDays(timing.scheduledFor, timing.now) >= required;
+  const shortfall = spendMet ? 0 : settings.free_delivery_over_cents - subtotal;
+
+  if (spendMet && leadMet) return { ...base, free: true, reason: "earned" };
+  if (!spendMet && !leadMet) {
+    return { ...base, free: false, reason: "needs_both", shortfall_cents: shortfall };
+  }
+  if (!leadMet) return { ...base, free: false, reason: "needs_lead_time" };
+  return { ...base, free: false, reason: "needs_spend", shortfall_cents: shortfall };
 }
 
 const MAX_PLATES = 20;
@@ -126,7 +183,12 @@ function quantity(raw: unknown, label: string): number {
  * Re-prices the cart entirely from database rows. The client's own totals are
  * never read — it only says *what* it wants, never what it costs.
  */
-export function priceOrder(catalog: Catalog, cart: CartInput, tipCents = 0): PricedOrder {
+export function priceOrder(
+  catalog: Catalog,
+  cart: CartInput,
+  tipCents = 0,
+  timing: DeliveryTiming = { scheduledFor: null, now: new Date() },
+): PricedOrder {
   if (!Array.isArray(cart.plates) || cart.plates.length === 0) {
     throw new PublicError("Add at least one spaghetti plate to your order.");
   }
@@ -200,10 +262,8 @@ export function priceOrder(catalog: Catalog, cart: CartInput, tipCents = 0): Pri
   }
 
   const { settings } = catalog;
-  const deliveryFee =
-    cart.fulfillment === "delivery" && subtotal <= settings.free_delivery_over_cents
-      ? settings.delivery_fee_cents
-      : 0;
+  const freeDelivery = evaluateFreeDelivery(subtotal, settings, cart.fulfillment, timing);
+  const deliveryFee = freeDelivery.free ? 0 : settings.delivery_fee_cents;
 
   // Tax applies to food, not the delivery fee or the tip (California treats a
   // separately stated delivery charge as non-taxable).
@@ -219,5 +279,6 @@ export function priceOrder(catalog: Catalog, cart: CartInput, tipCents = 0): Pri
     tip_cents: tip,
     total_cents: subtotal + deliveryFee + tax + tip,
     tax_rate: settings.tax_rate,
+    free_delivery: freeDelivery,
   };
 }

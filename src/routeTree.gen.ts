@@ -15,6 +15,7 @@ import { Route as MenuRouteImport } from './routes/menu'
 import { Route as OrderRouteImport } from './routes/order'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as ReviewsRouteImport } from './routes/reviews'
+import { Route as SubscriptionRouteImport } from './routes/subscription'
 import { Route as TrackRouteImport } from './routes/track'
 
 const IndexRoute = IndexRouteImport.update({
@@ -47,6 +48,11 @@ const ReviewsRoute = ReviewsRouteImport.update({
   path: '/reviews',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SubscriptionRoute = SubscriptionRouteImport.update({
+  id: '/subscription',
+  path: '/subscription',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TrackRoute = TrackRouteImport.update({
   id: '/track',
   path: '/track',
@@ -60,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/order': typeof OrderRoute
   '/review': typeof ReviewRoute
   '/reviews': typeof ReviewsRoute
+  '/subscription': typeof SubscriptionRoute
   '/track': typeof TrackRoute
 }
 export interface FileRoutesByTo {
@@ -69,6 +76,7 @@ export interface FileRoutesByTo {
   '/order': typeof OrderRoute
   '/review': typeof ReviewRoute
   '/reviews': typeof ReviewsRoute
+  '/subscription': typeof SubscriptionRoute
   '/track': typeof TrackRoute
 }
 export interface FileRoutesById {
@@ -79,14 +87,30 @@ export interface FileRoutesById {
   '/order': typeof OrderRoute
   '/review': typeof ReviewRoute
   '/reviews': typeof ReviewsRoute
+  '/subscription': typeof SubscriptionRoute
   '/track': typeof TrackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/admin' | '/menu' | '/order' | '/review' | '/reviews' | '/track'
+    | '/'
+    | '/admin'
+    | '/menu'
+    | '/order'
+    | '/review'
+    | '/reviews'
+    | '/subscription'
+    | '/track'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/menu' | '/order' | '/review' | '/reviews' | '/track'
+  to:
+    | '/'
+    | '/admin'
+    | '/menu'
+    | '/order'
+    | '/review'
+    | '/reviews'
+    | '/subscription'
+    | '/track'
   id:
     | '__root__'
     | '/'
@@ -95,6 +119,7 @@ export interface FileRouteTypes {
     | '/order'
     | '/review'
     | '/reviews'
+    | '/subscription'
     | '/track'
   fileRoutesById: FileRoutesById
 }
@@ -105,6 +130,7 @@ export interface RootRouteChildren {
   OrderRoute: typeof OrderRoute
   ReviewRoute: typeof ReviewRoute
   ReviewsRoute: typeof ReviewsRoute
+  SubscriptionRoute: typeof SubscriptionRoute
   TrackRoute: typeof TrackRoute
 }
 
@@ -152,6 +178,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReviewsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/subscription': {
+      id: '/subscription'
+      path: '/subscription'
+      fullPath: '/subscription'
+      preLoaderRoute: typeof SubscriptionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/track': {
       id: '/track'
       path: '/track'
@@ -169,6 +202,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrderRoute: OrderRoute,
   ReviewRoute: ReviewRoute,
   ReviewsRoute: ReviewsRoute,
+  SubscriptionRoute: SubscriptionRoute,
   TrackRoute: TrackRoute,
 }
 export const routeTree = rootRouteImport

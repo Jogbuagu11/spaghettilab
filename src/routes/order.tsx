@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, placeOrder } from "@/lib/api";
+import { ApiError, createSubscription, placeOrder } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { formatMoney } from "@/lib/menu";
-import { orderTotals } from "@/lib/pricing";
-import { canOrderAsapWithHours, slotsForHours } from "@/lib/schedule";
+import { leadDays, orderTotals } from "@/lib/pricing";
+import { canOrderAsapWithHours, formatMinutes, slotsForHours } from "@/lib/schedule";
 import { pageMeta } from "@/lib/seo";
 import {
   buildPaymentRequest,
@@ -41,9 +41,13 @@ export const Route = createFileRoute("/order")({
 
 const TIP_PERCENTS = [0, 10, 15, 20] as const;
 
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+type OrderType = "once" | "weekly";
+
 function OrderPage() {
   const navigate = useNavigate();
-  const { plates, extras, fulfillment, setFulfillment } = useCart();
+  const { plates, extras, fulfillment, setFulfillment, clear } = useCart();
   const { menu, hours, settings } = useStorefront();
 
   // Rendered on the client only — the server has no "now".
@@ -65,6 +69,10 @@ function OrderPage() {
     if (!when && now) setWhen(asapAvailable ? "asap" : (slots[0]?.iso ?? ""));
   }, [now, asapAvailable, slots, when]);
 
+  const [orderType, setOrderType] = useState<OrderType>("once");
+  const [weeklyDay, setWeeklyDay] = useState<number>(() => (new Date().getDay() + 2) % 7);
+  const [weeklyMinute, setWeeklyMinute] = useState(18 * 60);
+
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -72,9 +80,35 @@ function OrderPage() {
   const [note, setNote] = useState("");
   const [tipPercent, setTipPercent] = useState<number>(15);
 
-  const totals = orderTotals(plates, extras, fulfillment, menu.taxRate, menu);
+  // Free delivery depends on how far ahead the order is, so the chosen slot
+  // feeds straight into the quoted total. The server re-checks it before charging.
+  const scheduledFor = when && when !== "asap" ? new Date(when) : null;
+  const totals = orderTotals(plates, extras, fulfillment, menu.taxRate, menu, {
+    scheduledFor,
+    now: now ?? new Date(),
+    isSubscription: orderType === "weekly",
+  });
   const tipCents = Math.round(totals.subtotal * (tipPercent / 100));
   const grandTotal = totals.total + tipCents;
+
+  // Times a weekly order can be set for: the widest window across open days.
+  const weeklyTimeOptions = useMemo(() => {
+    const open = hours.filter((h) => !h.is_closed);
+    if (open.length === 0) return [];
+    const from = Math.min(...open.map((h) => h.open_minute)) + settings.slotIntervalMinutes;
+    const to = Math.max(...open.map((h) => h.close_minute));
+    const step = settings.slotIntervalMinutes;
+    return Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => from + i * step);
+  }, [hours, settings.slotIntervalMinutes]);
+
+  // The earliest slot that would actually earn free delivery, for the nudge.
+  const firstFreeSlot = useMemo(
+    () =>
+      slots.find(
+        (s) => leadDays(new Date(s.iso), now ?? new Date()) >= menu.freeDeliveryMinLeadDays,
+      ),
+    [slots, now, menu.freeDeliveryMinLeadDays],
+  );
 
   // ------------------------------------------------------------ Square ----
   const cardRef = useRef<HTMLDivElement>(null);
@@ -154,9 +188,9 @@ function OrderPage() {
     if (phone.replace(/\D/g, "").length < 10) return "Please enter a 10-digit phone number.";
     if (fulfillment === "delivery" && address.trim().length < 8)
       return "Please enter your delivery address.";
-    if (!when) return "Please choose a pickup time.";
+    if (orderType === "once" && !when) return "Please choose a pickup time.";
     return null;
-  }, [name, email, phone, fulfillment, address, when]);
+  }, [name, email, phone, fulfillment, address, when, orderType]);
 
   const pay = useCallback(
     async (method: SquarePaymentMethod | null) => {
@@ -178,6 +212,25 @@ function OrderPage() {
           email,
         });
 
+        const customer = { name: name.trim(), email: email.trim(), phone: phone.trim() };
+
+        if (orderType === "weekly") {
+          const subscription = await createSubscription({
+            sourceId: token,
+            plates,
+            extras,
+            fulfillment,
+            dayOfWeek: weeklyDay,
+            readyMinute: weeklyMinute,
+            deliveryAddress: fulfillment === "delivery" ? address.trim() : undefined,
+            tipPercent,
+            customer,
+          });
+          clear();
+          navigate({ to: "/subscription", search: { token: subscription.manageToken, new: true } });
+          return;
+        }
+
         const order = await placeOrder({
           sourceId: token,
           verificationToken,
@@ -188,7 +241,7 @@ function OrderPage() {
           deliveryAddress: fulfillment === "delivery" ? address.trim() : undefined,
           tipCents,
           note: note.trim() || undefined,
-          customer: { name: name.trim(), email: email.trim(), phone: phone.trim() },
+          customer,
         });
 
         // Keep the cart until we've navigated, so a failed redirect isn't a
@@ -215,8 +268,13 @@ function OrderPage() {
       when,
       address,
       tipCents,
+      tipPercent,
       note,
       navigate,
+      orderType,
+      weeklyDay,
+      weeklyMinute,
+      clear,
     ],
   );
 
@@ -255,6 +313,39 @@ function OrderPage() {
       <div className="mx-auto grid max-w-6xl gap-6 px-4 py-10 lg:grid-cols-[1fr_400px]">
         <div className="space-y-6">
           <h1 className="text-4xl font-black">Checkout</h1>
+
+          <section className="lab-card space-y-4 p-5">
+            <h2 className="text-xl font-bold">How often?</h2>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                className="chip h-auto flex-col items-start !rounded-2xl !px-4 !py-3 text-left"
+                data-active={orderType === "once"}
+                onClick={() => setOrderType("once")}
+              >
+                <span className="font-bold">Just this once</span>
+                <span className="text-xs font-normal opacity-80">
+                  Free delivery on {formatMoney(menu.freeDeliveryOver)}+ booked a day ahead.
+                </span>
+              </button>
+              <button
+                className="chip h-auto flex-col items-start !rounded-2xl !px-4 !py-3 text-left"
+                data-active={orderType === "weekly"}
+                onClick={() => setOrderType("weekly")}
+              >
+                <span className="flex items-center gap-2 font-bold">
+                  Every week
+                  {menu.subscriptionFreeDelivery && (
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary-foreground">
+                      Free delivery
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs font-normal opacity-80">
+                  Same plate, same time, every week. Skip or cancel any time.
+                </span>
+              </button>
+            </div>
+          </section>
 
           <section className="lab-card space-y-4 p-5">
             <h2 className="text-xl font-bold">Pickup or delivery?</h2>
@@ -301,26 +392,80 @@ function OrderPage() {
 
           <section className="lab-card space-y-3 p-5">
             <h2 className="text-xl font-bold">When?</h2>
-            {!asapAvailable && now && (
-              <p className="text-sm text-muted-foreground">
-                We're closed right now — pick a time slot below.
-              </p>
+
+            {orderType === "weekly" ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  We'll make this every week and charge your card the morning of.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1.5">
+                    <span className="lab-label text-muted-foreground">Day</span>
+                    <select
+                      value={weeklyDay}
+                      onChange={(e) => setWeeklyDay(Number(e.target.value))}
+                      className="h-12 w-full rounded-xl border-2 border-ink bg-card px-3 font-semibold"
+                    >
+                      {hours
+                        .filter((h) => !h.is_closed)
+                        .map((h) => (
+                          <option key={h.day_of_week} value={h.day_of_week}>
+                            Every {DAY_NAMES[h.day_of_week]}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="lab-label text-muted-foreground">Time</span>
+                    <select
+                      value={weeklyMinute}
+                      onChange={(e) => setWeeklyMinute(Number(e.target.value))}
+                      className="h-12 w-full rounded-xl border-2 border-ink bg-card px-3 font-semibold"
+                    >
+                      {weeklyTimeOptions.map((m) => (
+                        <option key={m} value={m}>
+                          {formatMinutes(m)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </>
+            ) : (
+              <>
+                {!asapAvailable && now && (
+                  <p className="text-sm text-muted-foreground">
+                    We're closed right now — pick a time slot below.
+                  </p>
+                )}
+                <select
+                  value={when}
+                  onChange={(e) => setWhen(e.target.value)}
+                  aria-label="Ready time"
+                  className="h-12 w-full rounded-xl border-2 border-ink bg-card px-3 font-semibold"
+                >
+                  {asapAvailable && (
+                    <option value="asap">ASAP (ready in ~{menu.prepMinutes} min)</option>
+                  )}
+                  {slots.map((s) => (
+                    <option key={s.iso} value={s.iso}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+
+                {fulfillment === "delivery" &&
+                  totals.freeDelivery.reason === "needs_lead_time" &&
+                  firstFreeSlot && (
+                    <button
+                      onClick={() => setWhen(firstFreeSlot.iso)}
+                      className="w-full rounded-xl border-2 border-ink bg-accent p-3 text-left text-sm font-semibold text-accent-foreground"
+                    >
+                      Book {firstFreeSlot.label} instead and delivery is free →
+                    </button>
+                  )}
+              </>
             )}
-            <select
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              aria-label="Ready time"
-              className="h-12 w-full rounded-xl border-2 border-ink bg-card px-3 font-semibold"
-            >
-              {asapAvailable && (
-                <option value="asap">ASAP (ready in ~{menu.prepMinutes} min)</option>
-              )}
-              {slots.map((s) => (
-                <option key={s.iso} value={s.iso}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
           </section>
 
           <section className="lab-card grid gap-3 p-5">

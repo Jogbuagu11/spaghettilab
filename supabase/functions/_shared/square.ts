@@ -48,6 +48,7 @@ function squareMessage(detail: { code?: string; detail?: string } | undefined): 
 }
 
 export interface ChargeInput {
+  /** A single-use token, or a saved card id when charging a card on file. */
   sourceId: string;
   amountCents: number;
   idempotencyKey: string;
@@ -55,6 +56,8 @@ export interface ChargeInput {
   note: string;
   buyerEmail?: string;
   verificationToken?: string;
+  /** Required by Square when sourceId is a stored card. */
+  customerId?: string;
 }
 
 /** The slice of Square's Payment object we read. */
@@ -92,6 +95,7 @@ export async function createPayment(input: ChargeInput): Promise<ChargeResult> {
       note: input.note.slice(0, 500),
       buyer_email_address: input.buyerEmail,
       verification_token: input.verificationToken,
+      customer_id: input.customerId,
       autocomplete: true,
     }),
   });
@@ -122,4 +126,75 @@ export async function refundPayment(paymentId: string, amountCents: number, reas
 export async function getPayment(paymentId: string): Promise<SquarePaymentResponse> {
   const body = await squareFetch(`/v2/payments/${paymentId}`);
   return body.payment as SquarePaymentResponse;
+}
+
+// ------------------------------------------------------- cards on file ----
+
+export interface SavedCard {
+  customerId: string;
+  cardId: string;
+  brand?: string;
+  last4?: string;
+}
+
+export interface SaveCardInput {
+  /** Single-use token from the Web Payments SDK. */
+  sourceId: string;
+  name: string;
+  email: string;
+  phone: string;
+  /** Stable key so a retried signup reuses the same Square customer. */
+  idempotencyKey: string;
+  postalCode?: string;
+}
+
+/**
+ * Creates a Square customer and vaults the card against it, so weekly runs can
+ * charge without the customer present. We keep only the returned ids — the card
+ * number never reaches us, which is what keeps this out of PCI scope.
+ */
+export async function saveCardOnFile(input: SaveCardInput): Promise<SavedCard> {
+  const [givenName, ...rest] = input.name.trim().split(/\s+/);
+
+  const customerBody = await squareFetch("/v2/customers", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: `cust-${input.idempotencyKey}`,
+      given_name: givenName || input.name,
+      family_name: rest.join(" ") || undefined,
+      email_address: input.email,
+      phone_number: input.phone,
+      note: "Spaghetti Lab weekly standing order",
+    }),
+  });
+
+  const customerId = (customerBody.customer as { id: string }).id;
+
+  const cardBody = await squareFetch("/v2/cards", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: `card-${input.idempotencyKey}`,
+      source_id: input.sourceId,
+      card: {
+        customer_id: customerId,
+        cardholder_name: input.name,
+        billing_address: input.postalCode
+          ? { postal_code: input.postalCode, country: "US" }
+          : undefined,
+      },
+    }),
+  });
+
+  const card = cardBody.card as { id: string; card_brand?: string; last_4?: string };
+  return { customerId, cardId: card.id, brand: card.card_brand, last4: card.last_4 };
+}
+
+/** Called when a subscription is cancelled, so we stop holding the card. */
+export async function forgetCard(cardId: string): Promise<void> {
+  try {
+    await squareFetch(`/v2/cards/${cardId}/disable`, { method: "POST" });
+  } catch (error) {
+    // A card that's already gone shouldn't block a cancellation.
+    console.warn("could not disable card", cardId, error);
+  }
 }

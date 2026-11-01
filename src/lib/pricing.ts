@@ -7,6 +7,7 @@ import {
   type ProteinId,
   type SizeId,
 } from "./menu";
+import { TZ } from "./schedule";
 
 export interface Plate {
   id: string;
@@ -40,13 +41,82 @@ export function extrasPrice(
   return menu.extras.reduce((sum, e) => sum + e.price * (extras[e.id as ExtraId] ?? 0), 0);
 }
 
+export type FreeDeliveryReason =
+  "pickup" | "subscription" | "earned" | "needs_lead_time" | "needs_spend" | "needs_both";
+
+export interface FreeDeliveryResult {
+  free: boolean;
+  reason: FreeDeliveryReason;
+  /** Cents still needed to reach the spend threshold; 0 once met. */
+  shortfallCents: number;
+  leadDaysRequired: number;
+}
+
+/** Context the free-delivery rule needs beyond the cart. */
+export interface DeliveryTiming {
+  /** When the food is due. null means ASAP. */
+  scheduledFor: Date | null;
+  now: Date;
+  isSubscription?: boolean;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Calendar days of notice in the kitchen's timezone — 7pm Monday for noon
+ * Tuesday counts as a day ahead even though it's under 24 hours. Mirrors
+ * `leadDays()` in the edge functions; the server stays authoritative.
+ */
+export function leadDays(scheduledFor: Date | null, now: Date): number {
+  if (!scheduledFor) return 0;
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const dayIndex = (at: Date) =>
+    Math.floor(Date.parse(`${formatter.format(at)}T00:00:00Z`) / DAY_MS);
+  return Math.max(0, dayIndex(scheduledFor) - dayIndex(now));
+}
+
+const ASAP = (): DeliveryTiming => ({ scheduledFor: null, now: new Date() });
+
+/**
+ * Free delivery takes planning, not just a big basket: the order must clear the
+ * spend threshold ($60 and over, inclusive) *and* be scheduled far enough
+ * ahead. Weekly standing orders bypass both.
+ */
+export function evaluateFreeDelivery(
+  subtotal: number,
+  fulfillment: Fulfillment,
+  menu: MenuData = STATIC_MENU,
+  timing: DeliveryTiming = ASAP(),
+): FreeDeliveryResult {
+  const base = { leadDaysRequired: menu.freeDeliveryMinLeadDays, shortfallCents: 0 };
+
+  if (fulfillment === "pickup") return { ...base, free: true, reason: "pickup" };
+  if (timing.isSubscription && menu.subscriptionFreeDelivery) {
+    return { ...base, free: true, reason: "subscription" };
+  }
+
+  const spendMet = subtotal >= menu.freeDeliveryOver;
+  const leadMet = leadDays(timing.scheduledFor, timing.now) >= menu.freeDeliveryMinLeadDays;
+  const shortfallCents = spendMet ? 0 : menu.freeDeliveryOver - subtotal;
+
+  if (spendMet && leadMet) return { ...base, free: true, reason: "earned" };
+  if (!spendMet && !leadMet) return { ...base, free: false, reason: "needs_both", shortfallCents };
+  if (!leadMet) return { ...base, free: false, reason: "needs_lead_time" };
+  return { ...base, free: false, reason: "needs_spend", shortfallCents };
+}
+
 export function deliveryFee(
   subtotal: number,
   fulfillment: Fulfillment,
   menu: MenuData = STATIC_MENU,
+  timing: DeliveryTiming = ASAP(),
 ): number {
-  if (fulfillment === "pickup") return 0;
-  return subtotal > menu.freeDeliveryOver ? 0 : menu.deliveryFee;
+  return evaluateFreeDelivery(subtotal, fulfillment, menu, timing).free ? 0 : menu.deliveryFee;
 }
 
 export function orderTotals(
@@ -55,11 +125,19 @@ export function orderTotals(
   fulfillment: Fulfillment,
   taxRate: number,
   menu: MenuData = STATIC_MENU,
+  timing: DeliveryTiming = ASAP(),
 ) {
   const subtotal = plates.reduce((s, p) => s + platePrice(p, menu), 0) + extrasPrice(extras, menu);
-  const delivery = deliveryFee(subtotal, fulfillment, menu);
+  const freeDelivery = evaluateFreeDelivery(subtotal, fulfillment, menu, timing);
+  const delivery = freeDelivery.free ? 0 : menu.deliveryFee;
   const tax = Math.round(subtotal * taxRate);
-  const untilFree =
-    fulfillment === "delivery" && delivery > 0 ? menu.freeDeliveryOver - subtotal + 1 : 0;
-  return { subtotal, delivery, tax, total: subtotal + delivery + tax, untilFree };
+  return {
+    subtotal,
+    delivery,
+    tax,
+    total: subtotal + delivery + tax,
+    freeDelivery,
+    /** Cents still needed to hit the spend threshold. */
+    untilFree: freeDelivery.shortfallCents,
+  };
 }

@@ -18,6 +18,11 @@
 - **Source of truth for the menu is Supabase.** `src/lib/menu.ts` holds build-time defaults that
   the storefront uses as a fallback; `src/lib/storefront.ts` overlays the live rows. When you add
   a menu field, add it to the migration, `MenuData`, and the admin Menu tab.
+- **Free delivery = $60+ AND a day's notice**, or any weekly standing order. The rule lives in
+  `evaluateFreeDelivery()` — once in `supabase/functions/_shared/catalog.ts` (authoritative) and
+  mirrored in `src/lib/pricing.ts` for display. Change both, or the quote won't match the charge.
+- **Weekly orders re-price every run.** Never cache a subscription's total; `run-subscriptions`
+  rebuilds it from the live menu so price changes and sold-out items are picked up.
 - **Money is integer cents everywhere** — database, edge functions, and UI. Never floats.
 - Time handling is America/Los_Angeles. Use the helpers in `src/lib/schedule.ts` (client) and
   `supabase/functions/_shared/schedule.ts` (server); both are DST-correct and tested.

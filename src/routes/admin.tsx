@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { updateOrderStatus } from "@/lib/api";
+import { manageSubscription, updateOrderStatus, type SubscriptionAction } from "@/lib/api";
 import { formatMoney } from "@/lib/menu";
 import { formatMinutes } from "@/lib/schedule";
 import { pageMeta } from "@/lib/seo";
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-const TABS = ["Orders", "Menu", "Hours", "Settings", "Reviews"] as const;
+const TABS = ["Orders", "Weekly", "Menu", "Hours", "Settings", "Reviews"] as const;
 type Tab = (typeof TABS)[number];
 
 function AdminPage() {
@@ -92,6 +92,7 @@ function AdminPage() {
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         {tab === "Orders" && <OrdersTab />}
+        {tab === "Weekly" && <SubscriptionsTab />}
         {tab === "Menu" && <MenuTab />}
         {tab === "Hours" && <HoursTab />}
         {tab === "Settings" && <SettingsTab />}
@@ -678,6 +679,181 @@ function ReviewsTab() {
             </label>
           </div>
           {review.body && <p className="text-sm text-muted-foreground">{review.body}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --------------------------------------------------- weekly standing ----
+
+interface SubscriptionAdminRow {
+  id: string;
+  reference: string;
+  status: "active" | "paused" | "payment_failed" | "cancelled";
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  fulfillment: "pickup" | "delivery";
+  delivery_address: string | null;
+  day_of_week: number;
+  ready_minute: number;
+  tip_percent: number;
+  card_brand: string | null;
+  card_last4: string | null;
+  manage_token: string;
+  next_run_date: string;
+  last_charged_at: string | null;
+  failure_count: number;
+  last_error: string | null;
+}
+
+const SUB_STATUS_TONE: Record<SubscriptionAdminRow["status"], string> = {
+  active: "bg-secondary text-secondary-foreground",
+  paused: "bg-muted text-muted-foreground",
+  payment_failed: "bg-destructive text-destructive-foreground",
+  cancelled: "bg-muted text-muted-foreground",
+};
+
+function SubscriptionsTab() {
+  const qc = useQueryClient();
+  const { data: subscriptions, isLoading } = useQuery({
+    queryKey: ["admin-subscriptions"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .order("status")
+        .order("next_run_date");
+      if (error) throw error;
+      return data as SubscriptionAdminRow[];
+    },
+  });
+
+  // Routed through the same edge function the customer uses, so an admin
+  // cancellation also removes the stored card and sends the same email.
+  const act = useMutation({
+    mutationFn: (input: { token: string; action: SubscriptionAction }) =>
+      manageSubscription(input.token, input.action),
+    onSuccess: () => {
+      toast.success("Standing order updated.");
+      qc.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Update failed."),
+  });
+
+  if (isLoading) return <p className="text-muted-foreground">Loading standing orders…</p>;
+
+  const live = (subscriptions ?? []).filter((s) => s.status !== "cancelled");
+  const weeklyRevenue = live.filter((s) => s.status === "active").length;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="font-display text-2xl font-black">Weekly standing orders</h1>
+        <p className="text-sm text-muted-foreground">
+          {weeklyRevenue} active · charged automatically the morning of each order, with free
+          delivery.
+        </p>
+      </div>
+
+      {(subscriptions ?? []).length === 0 && (
+        <p className="lab-card p-6 text-center text-muted-foreground">
+          No standing orders yet. The weekly option shows at checkout.
+        </p>
+      )}
+
+      {(subscriptions ?? []).map((sub) => (
+        <div key={sub.id} className="lab-card space-y-3 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="font-display text-xl font-bold">
+                {sub.reference}
+                <span
+                  className={`ml-2 rounded-full px-2 py-0.5 align-middle text-xs font-semibold uppercase ${SUB_STATUS_TONE[sub.status]}`}
+                >
+                  {sub.status.replace(/_/g, " ")}
+                </span>
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Every {DAY_NAMES[sub.day_of_week]} at {formatMinutes(sub.ready_minute)} ·{" "}
+                {sub.fulfillment === "pickup" ? "Pickup" : "Delivery"}
+              </p>
+            </div>
+            {sub.status === "active" && (
+              <p className="text-sm text-muted-foreground">Next {sub.next_run_date}</p>
+            )}
+          </div>
+
+          <p className="text-sm">
+            <strong>{sub.customer_name}</strong> ·{" "}
+            <a href={`tel:${sub.customer_phone}`} className="underline">
+              {sub.customer_phone}
+            </a>
+            <span className="block text-muted-foreground">{sub.customer_email}</span>
+            {sub.delivery_address && (
+              <span className="block text-muted-foreground">{sub.delivery_address}</span>
+            )}
+            {sub.card_brand && (
+              <span className="block text-muted-foreground">
+                {sub.card_brand} ending {sub.card_last4}
+                {sub.tip_percent > 0 && ` · ${sub.tip_percent}% tip`}
+              </span>
+            )}
+          </p>
+
+          {sub.last_error && (
+            <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+              <strong className="text-destructive">Last failure ({sub.failure_count}×):</strong>{" "}
+              {sub.last_error}
+            </p>
+          )}
+
+          {sub.status !== "cancelled" && (
+            <div className="flex flex-wrap gap-2">
+              {sub.status === "paused" ? (
+                <Button
+                  variant="lab"
+                  size="sm"
+                  disabled={act.isPending}
+                  onClick={() => act.mutate({ token: sub.manage_token, action: "resume" })}
+                >
+                  Resume
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="labGhost"
+                    size="sm"
+                    disabled={act.isPending}
+                    onClick={() => act.mutate({ token: sub.manage_token, action: "skip_next" })}
+                  >
+                    Skip next
+                  </Button>
+                  <Button
+                    variant="labGhost"
+                    size="sm"
+                    disabled={act.isPending}
+                    onClick={() => act.mutate({ token: sub.manage_token, action: "pause" })}
+                  >
+                    Pause
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="labGhost"
+                size="sm"
+                disabled={act.isPending}
+                onClick={() => {
+                  if (window.confirm(`Cancel ${sub.reference}? This removes their saved card.`)) {
+                    act.mutate({ token: sub.manage_token, action: "cancel" });
+                  }
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
       ))}
     </div>

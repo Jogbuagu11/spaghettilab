@@ -12,7 +12,9 @@
  * Re-running is safe: Square object ids are written back to menu_options, and
  * subsequent runs update those objects in place rather than duplicating them.
  *
- * Reads credentials from the environment or .env.local.
+ * Reads credentials from the environment or .env.local. Talks to Supabase
+ * through PostgREST when SUPABASE_SERVICE_ROLE_KEY is set, or straight to
+ * Postgres when only SUPABASE_DB_URL is available and `pg` is installed.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -51,8 +53,6 @@ function need(name) {
 
 loadEnv();
 
-const SUPABASE_URL = need("SUPABASE_URL");
-const SERVICE_KEY = need("SUPABASE_SERVICE_ROLE_KEY");
 const SQUARE_TOKEN = need("SQUARE_ACCESS_TOKEN");
 const SQUARE_ENV = process.env.SQUARE_ENVIRONMENT ?? "sandbox";
 const SQUARE_BASE =
@@ -60,22 +60,85 @@ const SQUARE_BASE =
     ? "https://connect.squareup.com"
     : "https://connect.squareupsandbox.com";
 
-// -------------------------------------------------------------- clients ----
+// ------------------------------------------------------------ data access ----
 
-async function supabase(pathname, init = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathname}`, {
-    ...init,
-    headers: {
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
-      "content-type": "application/json",
-      prefer: "return=representation",
-      ...(init.headers ?? {}),
-    },
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Supabase ${res.status}: ${text}`);
-  return text ? JSON.parse(text) : null;
+const MENU_COLUMNS =
+  "id, group_name, label, price_cents, sort_order, square_object_id, square_variation_id";
+
+/**
+ * Two ways in, because the service role key and the database URL tend to be
+ * available at different moments: PostgREST when we have the key, a direct
+ * Postgres connection when we only have the URL.
+ */
+async function openStore() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+
+  if (serviceKey && supabaseUrl) {
+    const request = async (pathname, init = {}) => {
+      const res = await fetch(`${supabaseUrl}/rest/v1/${pathname}`, {
+        ...init,
+        headers: {
+          apikey: serviceKey,
+          authorization: `Bearer ${serviceKey}`,
+          "content-type": "application/json",
+          prefer: "return=representation",
+          ...(init.headers ?? {}),
+        },
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(`Supabase ${res.status}: ${text}`);
+      return text ? JSON.parse(text) : null;
+    };
+
+    return {
+      kind: "postgrest",
+      listOptions: () =>
+        request(
+          `menu_options?select=${encodeURIComponent(MENU_COLUMNS)}&order=group_name,sort_order`,
+        ),
+      linkOption: (id, patch) =>
+        request(`menu_options?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+          headers: { prefer: "return=minimal" },
+        }),
+      close: async () => {},
+    };
+  }
+
+  const dbUrl = process.env.SUPABASE_DB_URL;
+  if (!dbUrl) {
+    console.error("\n  Set SUPABASE_SERVICE_ROLE_KEY (+ SUPABASE_URL), or SUPABASE_DB_URL.\n");
+    process.exit(1);
+  }
+
+  let pg;
+  try {
+    ({ default: pg } = await import("pg"));
+  } catch {
+    console.error("\n  SUPABASE_DB_URL needs the `pg` package: npm i -D pg\n");
+    process.exit(1);
+  }
+
+  const client = new pg.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+  await client.connect();
+
+  return {
+    kind: "postgres",
+    listOptions: async () =>
+      (
+        await client.query(
+          `select ${MENU_COLUMNS} from menu_options order by group_name, sort_order`,
+        )
+      ).rows,
+    linkOption: (id, patch) =>
+      client.query(
+        `update menu_options set square_object_id = $2, square_variation_id = $3 where id = $1`,
+        [id, patch.square_object_id ?? null, patch.square_variation_id ?? null],
+      ),
+    close: () => client.end(),
+  };
 }
 
 async function square(pathname, init = {}) {
@@ -189,132 +252,188 @@ function extraItem(extra) {
   };
 }
 
-// ----------------------------------------------------------------- main ----
+// -------------------------------------------------------- reconciliation ----
 
 /**
- * Square needs the current `version` of an object to update it. Anything we
- * previously created is fetched so the upsert replaces it instead of failing.
+ * Square assigns permanent ids on creation, and an update must carry both the
+ * id and the current version. Rather than rely on ids stored from an earlier
+ * run (which only covers leaves, never their containers), each run reads the
+ * live catalog and matches on name. That makes this self-healing: it works
+ * against a catalog built by a previous run, by hand, or not at all.
  */
-async function existingVersions(ids) {
-  if (ids.length === 0) return new Map();
-  const { objects = [] } = await square("/v2/catalog/batch-retrieve", {
+async function fetchExistingCatalog() {
+  const body = await square("/v2/catalog/search", {
     method: "POST",
-    body: JSON.stringify({ object_ids: ids, include_related_objects: false }),
+    body: JSON.stringify({ object_types: ["ITEM", "MODIFIER_LIST"] }),
   });
-  const versions = new Map();
-  const walk = (obj) => {
-    versions.set(obj.id, obj.version);
-    for (const child of obj.item_data?.variations ?? []) walk(child);
-    for (const child of obj.modifier_list_data?.modifiers ?? []) walk(child);
-  };
-  objects.forEach(walk);
-  return versions;
+
+  const items = new Map();
+  const lists = new Map();
+
+  for (const object of body.objects ?? []) {
+    if (object.type === "ITEM") {
+      items.set(object.item_data.name, {
+        id: object.id,
+        version: object.version,
+        variations: new Map(
+          (object.item_data.variations ?? []).map((v) => [
+            v.item_variation_data.name,
+            { id: v.id, version: v.version },
+          ]),
+        ),
+      });
+    } else if (object.type === "MODIFIER_LIST") {
+      lists.set(object.modifier_list_data.name, {
+        id: object.id,
+        version: object.version,
+        modifiers: new Map(
+          (object.modifier_list_data.modifiers ?? []).map((m) => [
+            m.modifier_data.name,
+            { id: m.id, version: m.version },
+          ]),
+        ),
+      });
+    }
+  }
+
+  return { items, lists };
 }
 
-/** Swaps temp ids for real ones where we already know them, and attaches versions. */
-function applyExisting(object, idMap, versions) {
-  const known = idMap.get(object.id);
-  if (known && versions.has(known)) {
-    object.id = known;
-    object.version = versions.get(known);
+/** Points a modifier list at its existing counterpart, in place. */
+function reconcileList(list, existing) {
+  const match = existing.lists.get(list.modifier_list_data.name);
+  if (!match) return null;
+
+  list.id = match.id;
+  list.version = match.version;
+
+  for (const modifier of list.modifier_list_data.modifiers) {
+    const found = match.modifiers.get(modifier.modifier_data.name);
+    if (found) {
+      modifier.id = found.id;
+      modifier.version = found.version;
+      // Square rejects this attribute on an existing modifier — a modifier
+      // can't be moved between lists — so it must be dropped on update.
+      delete modifier.modifier_data.modifier_list_id;
+    } else {
+      // A brand-new modifier does need to name its (now real) parent list.
+      modifier.modifier_data.modifier_list_id = match.id;
+    }
   }
-  for (const child of object.item_data?.variations ?? []) applyExisting(child, idMap, versions);
-  for (const child of object.modifier_list_data?.modifiers ?? [])
-    applyExisting(child, idMap, versions);
-  return object;
+
+  return match.id;
 }
+
+function reconcileItem(item, existing) {
+  const match = existing.items.get(item.item_data.name);
+  if (!match) return;
+
+  item.id = match.id;
+  item.version = match.version;
+
+  for (const variation of item.item_data.variations) {
+    const found = match.variations.get(variation.item_variation_data.name);
+    if (found) {
+      variation.id = found.id;
+      variation.version = found.version;
+      variation.item_variation_data.item_id = match.id;
+    }
+  }
+}
+
+// ----------------------------------------------------------------- main ----
 
 async function main() {
   console.log(`\n  Square catalog sync — ${SQUARE_ENV}\n`);
 
-  const options = await supabase(
-    "menu_options?select=id,group_name,label,price_cents,sort_order,square_object_id,square_variation_id&order=group_name,sort_order",
-  );
+  const store = await openStore();
+  const options = await store.listOptions();
   const byGroup = (group) => options.filter((o) => o.group_name === group);
 
   const sizes = byGroup("size");
   if (sizes.length === 0) throw new Error("No sizes in menu_options — run the migrations first.");
 
-  const heatList = modifierList({
-    key: "heat",
-    name: "Heat",
-    selectionType: "SINGLE",
-    options: byGroup("heat"),
-  });
-  const proteinList = modifierList({
-    key: "protein",
-    name: "Proteins",
-    selectionType: "MULTIPLE",
-    options: byGroup("protein"),
-    allowQuantity: true,
-  });
-  const customList = modifierList({
-    key: "customization",
-    name: "Add-ons",
-    selectionType: "MULTIPLE",
-    options: byGroup("customization"),
-  });
-
-  const objects = [
-    heatList,
-    proteinList,
-    customList,
-    plateItem(sizes, [heatList.id, proteinList.id, customList.id]),
-    ...byGroup("extra").map(extraItem),
+  const lists = [
+    modifierList({ key: "heat", name: "Heat", selectionType: "SINGLE", options: byGroup("heat") }),
+    modifierList({
+      key: "protein",
+      name: "Proteins",
+      selectionType: "MULTIPLE",
+      options: byGroup("protein"),
+      allowQuantity: true,
+    }),
+    modifierList({
+      key: "customization",
+      name: "Add-ons",
+      selectionType: "MULTIPLE",
+      options: byGroup("customization"),
+    }),
   ];
+
+  const existing = DRY_RUN ? { items: new Map(), lists: new Map() } : await fetchExistingCatalog();
+
+  // Lists are reconciled first so the plate item can reference their real ids.
+  const listIds = lists.map((list) => reconcileList(list, existing) ?? list.id);
+
+  const items = [plateItem(sizes, listIds), ...byGroup("extra").map(extraItem)];
+  items.forEach((item) => reconcileItem(item, existing));
+
+  const objects = [...lists, ...items];
 
   if (DRY_RUN) {
     console.log(JSON.stringify(objects, null, 2));
     console.log(`\n  --dry-run: nothing sent. ${objects.length} top-level objects.\n`);
+    await store.close();
     return;
   }
-
-  // Map our temp ids back to any Square ids we stored on a previous run.
-  const idMap = new Map();
-  for (const option of options) {
-    if (option.square_object_id) idMap.set(tempId("mod", option.id), option.square_object_id);
-    if (option.square_variation_id) idMap.set(tempId("var", option.id), option.square_variation_id);
-  }
-  const versions = await existingVersions([...new Set(idMap.values())]);
-  objects.forEach((object) => applyExisting(object, idMap, versions));
 
   const response = await square("/v2/catalog/batch-upsert", {
     method: "POST",
     body: JSON.stringify({
-      idempotency_key: `spaghetti-lab-${new Date().toISOString().slice(0, 16)}`,
+      idempotency_key: `spaghetti-lab-${new Date().toISOString().slice(0, 19)}`,
       batches: [{ objects }],
     }),
   });
 
-  // Square returns the temp-id -> permanent-id mapping for newly created rows.
+  // New objects come back with a temp-id -> permanent-id mapping; anything
+  // reconciled above already carries its real id.
   const mapped = new Map(
     (response.id_mappings ?? []).map((m) => [m.client_object_id, m.object_id]),
   );
-  const resolve = (temp) => mapped.get(temp) ?? idMap.get(temp) ?? null;
+  const realId = (id) => (id.startsWith("#") ? (mapped.get(id) ?? null) : id);
 
-  const updates = [];
+  // Link menu rows to their Square counterparts so reporting lines up.
+  const resolved = new Map();
+  for (const list of lists) {
+    for (const modifier of list.modifier_list_data.modifiers) {
+      resolved.set(modifier.id, realId(modifier.id));
+    }
+  }
+  for (const item of items) {
+    for (const variation of item.item_data.variations) {
+      resolved.set(variation.id, realId(variation.id));
+    }
+  }
+
+  let linked = 0;
   for (const option of options) {
-    const objectId = resolve(tempId("mod", option.id));
-    const variationId = resolve(tempId("var", option.id));
+    // After reconciliation an object's `id` is already real, so look the row
+    // up by both the temp key and whatever the id became.
+    const objectId = resolved.get(tempId("mod", option.id)) ?? option.square_object_id ?? null;
+    const variationId =
+      resolved.get(tempId("var", option.id)) ?? option.square_variation_id ?? null;
     if (!objectId && !variationId) continue;
-    updates.push({
-      id: option.id,
-      square_object_id: objectId ?? option.square_object_id,
-      square_variation_id: variationId ?? option.square_variation_id,
+    await store.linkOption(option.id, {
+      square_object_id: objectId,
+      square_variation_id: variationId,
     });
+    linked++;
   }
-
-  for (const update of updates) {
-    const { id, ...patch } = update;
-    await supabase(`menu_options?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-      headers: { prefer: "return=minimal" },
-    });
-  }
+  await store.close();
 
   console.log(`  upserted ${response.objects?.length ?? 0} catalog objects`);
-  console.log(`  linked   ${updates.length} menu_options rows back to Square\n`);
+  console.log(`  created  ${response.id_mappings?.length ?? 0} new, the rest updated in place`);
+  console.log(`  linked   ${linked} menu_options rows back to Square\n`);
   console.log(
     `  Review them at https://app.squareup${SQUARE_ENV === "production" ? "" : "sandbox"}.com/dashboard/items/library\n`,
   );

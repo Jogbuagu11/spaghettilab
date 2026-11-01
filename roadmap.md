@@ -16,11 +16,21 @@
 - [x] /reviews with verified reviews + AggregateRating schema, moderated in /admin
 - [x] GA4 + Meta Pixel wiring (ids set in /admin), sitemap, manifest, social share cards
 
+## Phase 4 — scheduled & recurring (done)
+- [x] Free delivery now requires $60+ **and** a day's notice, to push orders out of the rush
+- [x] Weekly standing orders: card on file, auto-charged, free delivery, skip/pause/cancel
+- [x] Admin tab for standing orders; customer self-service at /subscription
+
 ## Still needs the owner
-- [ ] Supabase, Square and Resend credentials (see README "Setup")
-- [ ] Verify spaghettilab.store in Resend (SPF + DKIM + DMARC DNS records)
+- [x] Supabase project linked, migrations applied, admin user seeded
+- [x] spaghettilab.store verified in Resend
+- [x] Square sandbox webhook created, catalog seeded
+- [x] Pickup address set (1183 Benny Ct)
+- [ ] Supabase service role key + access token, so the edge functions can be deployed
+- [ ] Run `supabase/cron-jobs.sql` (weekly charges don't happen without it)
 - [ ] Register spaghettilab.store for Apple Pay in the Square dashboard
-- [ ] Real pickup address, phone number and social URLs (enter in /admin -> Settings)
+- [ ] Phone number and social URLs (enter in /admin -> Settings)
+- [ ] Rotate the credentials that were shared in plaintext
 - [ ] Switch Square from sandbox to production once test orders look right
 
 ## Later

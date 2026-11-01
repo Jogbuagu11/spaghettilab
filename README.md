@@ -1,8 +1,8 @@
 # Spaghetti Lab
 
 Order-ahead storefront for a permitted MEHKO home kitchen in Berryessa, North San Jose.
-Customers build a spaghetti plate, pick pickup or delivery, choose a time, and pay by card,
-Apple Pay or Google Pay.
+Customers build a spaghetti plate, order it once or every week, and pay by card, Apple Pay
+or Google Pay.
 
 - **Frontend** — TanStack Start (React 19, Vite, Tailwind v4), deployed to Vercel at `spaghettilab.store`
 - **Database & API** — Supabase Postgres + Edge Functions (Deno)
@@ -31,16 +31,45 @@ checkout ───────┼─ card ───▶ Square Web Payments SDK �
                                ├─ writes orders + order_items
                                └─ emails receipt + ticket ────▶ Resend
 
+weekly signup ────────────▶ create-subscription (vaults a card with Square)
+cron (daily 9am) ─────────▶ run-subscriptions   (re-prices, charges, emails)
+
 /track?token=… ───────────▶ track-order        (token-scoped, no login)
+/subscription?token=… ────▶ manage-subscription (skip, pause, cancel)
 /review?token=… ──────────▶ submit-review      (proves they ordered)
 /admin ───────────────────▶ update-order-status (admin JWT, refunds + emails)
 Square ───────────────────▶ square-webhook     (HMAC-verified)
 cron ─────────────────────▶ send-review-requests
 ```
 
-**The browser never sends prices.** It says *what* it wants; `create-order` re-prices the whole
+**The browser never sends prices.** It says *what* it wants; the server re-prices the whole
 cart from `menu_options` and `settings` before charging. A tampered payload cannot set its own
-total. This is covered by `supabase/functions/_shared/catalog_test.ts`.
+total. Checkout and the weekly run share one `placeAndChargeOrder`, so there is exactly one
+place where an order becomes real. Covered by `supabase/functions/_shared/catalog_test.ts`.
+
+### Delivery pricing
+
+Free delivery takes planning, not just a big basket:
+
+| | ASAP / same day | Scheduled a day ahead |
+| --- | --- | --- |
+| **Under $60** | $7 | $7 |
+| **$60 and over** | $7 | **Free** |
+| **Weekly standing order** | **Free** | **Free** |
+
+"a day ahead" means a later *calendar day* in the kitchen's timezone, so ordering at 7pm Monday
+for noon Tuesday counts even though it's under 24 hours. Both knobs are admin-editable:
+`free_delivery_min_lead_days = 0` restores the old size-only rule, and the weekly perk can be
+switched off.
+
+### Weekly standing orders
+
+The customer saves a card once (Square Cards API — we store only the customer and card ids,
+never card data), picks a weekday and time, and `run-subscriptions` creates and charges a real
+order each week. Every run **re-prices against the live menu**, so a price change or a sold-out
+topping is reflected automatically rather than frozen at signup. Three consecutive declines
+pause the subscription instead of retrying forever. Skip, pause and cancel are one click from
+any email; cancelling also disables the stored card.
 
 ---
 
@@ -71,13 +100,16 @@ configured, so the site still renders without credentials — checkout is simply
 
 ```sh
 supabase link --project-ref YOUR-PROJECT-REF
-supabase db push                       # applies the three migrations
+supabase db push          # applies the migrations in supabase/migrations
 ```
 
-Grant yourself admin access (this is what unlocks `/admin`):
+`supabase db push --db-url "$SUPABASE_DB_URL"` also works and skips `supabase login`.
+
+Admin access is granted by the `admin_users` allowlist, which RLS checks against the JWT email
+claim. `20261101000600_owner_setup.sql` seeds `mrs.ogbuagu@gmail.com`; add others with:
 
 ```sql
-insert into admin_users (email) values ('you@example.com');
+insert into admin_users (email) values ('someone@example.com');
 ```
 
 Set the function secrets, then deploy:
@@ -85,7 +117,8 @@ Set the function secrets, then deploy:
 ```sh
 supabase secrets set --env-file .env.local
 supabase functions deploy create-order track-order submit-review \
-                          update-order-status send-review-requests
+                          update-order-status send-review-requests \
+                          create-subscription manage-subscription run-subscriptions
 # Square calls this one without a Supabase JWT, so it must skip auth:
 supabase functions deploy square-webhook --no-verify-jwt
 ```
@@ -104,10 +137,14 @@ node scripts/square-catalog-seed.mjs --dry-run   # inspect the payload
 node scripts/square-catalog-seed.mjs             # create/update the catalog
 ```
 
+It reads Supabase through PostgREST when `SUPABASE_SERVICE_ROLE_KEY` is set, or straight from
+Postgres via `SUPABASE_DB_URL` when `pg` is installed (`npm i -D pg`).
+
 It builds one **Spaghetti Plate** item with Small/Medium/Large variations plus Heat, Proteins
 and Add-ons modifier lists, and one item per side/drink — so Square receipts and sales reports
-break down properly instead of showing a single opaque total. Re-running updates in place:
-Square object ids are written back to `menu_options`.
+break down properly instead of showing a single opaque total. Re-running is safe: each run reads the live catalog and matches objects **by name**, so it
+updates in place instead of duplicating — and it works against a catalog built by a previous
+run, by hand, or not at all.
 
 Then in the Square dashboard:
 
@@ -137,8 +174,12 @@ idempotency guard, so a retried webhook can't send a second receipt.
 | `order_preparing` / `order_ready` / `order_out_for_delivery` / `order_completed` | Admin status change |
 | `order_cancelled` | Admin cancels, with refund status |
 | `review_request` | 3 hours after completion (cron) |
+| `subscription_confirmed` | Weekly standing order created |
+| `subscription_failed_*` | A weekly charge is declined |
+| `subscription_cancelled` | Standing order cancelled |
 
-Optional — schedule the review sweep by following `supabase/cron-review-requests.sql`.
+Schedule the weekly subscription run and the review sweep by following
+`supabase/cron-jobs.sql`. The subscription job is **required** for standing orders to charge.
 
 ### 4. Vercel
 
@@ -161,6 +202,9 @@ not just the UI).
 
 - **Orders** — live tickets, auto-refreshing; status buttons that email the customer, and cancel
   with an automatic Square refund
+- **Weekly** — every standing order, its schedule, card and failure history; skip, pause or
+  cancel on the customer's behalf (routed through the same function they use, so a cancellation
+  still removes the card and sends the same email)
 - **Menu** — edit any price, flag anything sold out; changes are live immediately and are
   re-validated at checkout
 - **Hours** — per-day opening times (America/Los_Angeles)

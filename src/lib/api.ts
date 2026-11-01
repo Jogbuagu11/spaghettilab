@@ -138,3 +138,82 @@ export function updateOrderStatus(input: {
 }): Promise<{ ok: true; status: string; refunded: boolean }> {
   return callFunction("update-order-status", { method: "POST", body: JSON.stringify(input) });
 }
+
+// --------------------------------------------------- weekly standing order ----
+
+export interface CreateSubscriptionInput {
+  sourceId: string;
+  plates: Plate[];
+  extras: Partial<Record<ExtraId, number>>;
+  fulfillment: Fulfillment;
+  /** 0 = Sunday. */
+  dayOfWeek: number;
+  /** Minute of the day the food should be ready. */
+  readyMinute: number;
+  deliveryAddress?: string | undefined;
+  tipPercent?: number | undefined;
+  customer: { name: string; email: string; phone: string };
+}
+
+export interface CreatedSubscription {
+  reference: string;
+  manageToken: string;
+  nextRunDate: string;
+  cardBrand: string | null;
+  cardLast4: string | null;
+}
+
+export function createSubscription(input: CreateSubscriptionInput): Promise<CreatedSubscription> {
+  return callFunction<CreatedSubscription>("create-subscription", {
+    method: "POST",
+    body: JSON.stringify({
+      ...input,
+      plates: input.plates.map((p) => ({
+        size: p.size,
+        heat: p.heat,
+        proteins: p.proteins,
+        customizations: p.customs,
+      })),
+    }),
+  });
+}
+
+export interface SubscriptionSummary {
+  id: string;
+  reference: string;
+  status: "active" | "paused" | "payment_failed" | "cancelled";
+  customer_name: string;
+  fulfillment: Fulfillment;
+  delivery_address: string | null;
+  day_of_week: number;
+  ready_minute: number;
+  tip_percent: number;
+  card_brand: string | null;
+  card_last4: string | null;
+  next_run_date: string;
+  last_charged_at: string | null;
+  created_at: string;
+}
+
+export interface SubscriptionResponse {
+  subscription: SubscriptionSummary;
+  skippedDates: string[];
+}
+
+export function getSubscription(token: string): Promise<SubscriptionResponse> {
+  return callFunction<SubscriptionResponse>(
+    `manage-subscription?token=${encodeURIComponent(token)}`,
+  );
+}
+
+export type SubscriptionAction = "skip_next" | "pause" | "resume" | "cancel";
+
+export function manageSubscription(
+  token: string,
+  action: SubscriptionAction,
+): Promise<{ ok: true; status: string; nextRunDate?: string }> {
+  return callFunction("manage-subscription", {
+    method: "POST",
+    body: JSON.stringify({ token, action }),
+  });
+}

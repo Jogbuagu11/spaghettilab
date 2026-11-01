@@ -13,6 +13,7 @@ export interface EmailOrderItem {
 
 export interface EmailOrder {
   order_number: string;
+  customer_email?: string;
   fulfillment: "pickup" | "delivery";
   customer_name: string;
   delivery_address: string | null;
@@ -264,6 +265,107 @@ export function kitchenAlert(order: EmailOrder, ctx: EmailContext): RenderedEmai
         ${receipt(order)}
         ${card(`${label("Customer")}<p style="margin:0;font-family:${SANS};font-size:15px;line-height:1.6;color:${BRAND.ink};">${escapeHtml(order.customer_name)}<br>${escapeHtml(order.delivery_address ? "Delivery" : "Pickup")}</p>`)}`,
       cta: { label: "Open admin dashboard", url: `${SITE_URL}/admin` },
+    }),
+  };
+}
+
+// ----------------------------------------------------- weekly standing ----
+
+export interface EmailSubscription {
+  reference: string;
+  customer_name: string;
+  fulfillment: "pickup" | "delivery";
+  delivery_address: string | null;
+  day_of_week: number;
+  ready_minute: number;
+  card_brand: string | null;
+  card_last4: string | null;
+  manage_token: string;
+  next_run_date: string;
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const clockTime = (minute: number) => {
+  const h = Math.floor(minute / 60);
+  return `${((h + 11) % 12) + 1}:${String(minute % 60).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+};
+
+const manageUrl = (sub: EmailSubscription) => `${SITE_URL}/subscription?token=${sub.manage_token}`;
+
+const scheduleLine = (sub: EmailSubscription) =>
+  `Every ${DAY_NAMES[sub.day_of_week]} at ${clockTime(sub.ready_minute)}`;
+
+/** Shown in every subscription email so cancelling is never more than one click. */
+function standingOrderCard(sub: EmailSubscription): string {
+  const where =
+    sub.fulfillment === "pickup" ? "Pickup" : escapeHtml(sub.delivery_address ?? "Delivery");
+  const cardLine =
+    sub.card_brand && sub.card_last4
+      ? `${escapeHtml(sub.card_brand)} ending ${escapeHtml(sub.card_last4)}`
+      : "Card on file";
+
+  return card(`
+    ${label("Your standing order")}
+    <p style="margin:0 0 10px;font-family:${SANS};font-size:17px;font-weight:bold;color:${BRAND.ink};">${escapeHtml(scheduleLine(sub))}</p>
+    <p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${BRAND.mutedText};">
+      ${where}<br>
+      Paid automatically with ${cardLine}<br>
+      Reference ${escapeHtml(sub.reference)}
+    </p>`);
+}
+
+export function subscriptionConfirmed(sub: EmailSubscription): RenderedEmail {
+  return {
+    subject: `Your weekly spaghetti is set — ${sub.reference}`,
+    html: renderEmail({
+      preheader: `${scheduleLine(sub)}. Free delivery, every week.`,
+      eyebrow: "Standing order confirmed",
+      heading: `You're all set, ${firstName(sub.customer_name)}.`,
+      body: `
+        ${paragraph("Same plate, same time, every week — and delivery is on us, whatever the size.")}
+        ${standingOrderCard(sub)}
+        ${paragraph(`We'll charge your card and email a receipt the morning of each order, starting <strong>${escapeHtml(sub.next_run_date)}</strong>. You can skip a week, pause, or cancel any time — no notice needed.`)}`,
+      cta: { label: "Manage your weekly order", url: manageUrl(sub) },
+      footerNote: "Changes made before 9am on your delivery day apply to that week.",
+    }),
+  };
+}
+
+export function subscriptionPaymentFailed(
+  sub: EmailSubscription,
+  attemptsLeft: number,
+): RenderedEmail {
+  return {
+    subject: `We couldn't charge your card — ${sub.reference}`,
+    html: renderEmail({
+      preheader: "Your weekly order didn't go through this week.",
+      eyebrow: "Payment problem",
+      heading: "We couldn't take this week's payment.",
+      body: `
+        ${paragraph(`Hi ${firstName(sub.customer_name)} — your card was declined, so this week's order hasn't been placed.`)}
+        ${standingOrderCard(sub)}
+        ${paragraph(
+          attemptsLeft > 0
+            ? `We'll try again next week. Update your card to get back on track.`
+            : `We've paused your standing order for now. Update your card to restart it whenever you're ready.`,
+        )}`,
+      cta: { label: "Update your card", url: manageUrl(sub) },
+    }),
+  };
+}
+
+export function subscriptionCancelled(sub: EmailSubscription): RenderedEmail {
+  return {
+    subject: `Your weekly order is cancelled — ${sub.reference}`,
+    html: renderEmail({
+      preheader: "No further charges. Your card has been removed.",
+      eyebrow: "Standing order cancelled",
+      heading: "That's all stopped.",
+      body: `
+        ${paragraph(`Thanks for eating with us, ${firstName(sub.customer_name)}. Your weekly order is cancelled, your card has been removed, and you won't be charged again.`)}
+        ${paragraph("If you change your mind, starting a new one takes about a minute.")}`,
+      cta: { label: "Start a new weekly order", url: `${SITE_URL}/menu` },
     }),
   };
 }

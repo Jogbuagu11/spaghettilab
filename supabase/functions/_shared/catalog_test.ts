@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { priceOrder, type Catalog, type MenuOption } from "./catalog.ts";
+import { priceOrder, type Catalog, type DeliveryTiming, type MenuOption } from "./catalog.ts";
 import { PublicError } from "./http.ts";
 
 const option = (
@@ -42,6 +42,8 @@ function catalog(overrides: Partial<Catalog["settings"]> = {}, soldOut: string[]
       tax_rate: 0.09375,
       delivery_fee_cents: 700,
       free_delivery_over_cents: 6000,
+      free_delivery_min_lead_days: 1,
+      subscription_free_delivery: true,
       prep_minutes: 15,
       slot_interval_minutes: 15,
       delivery_radius_miles: 5,
@@ -148,26 +150,116 @@ Deno.test("deduplicates repeated customizations", () => {
   assertEquals(priced.subtotal_cents, 1800 + 100);
 });
 
-Deno.test("charges delivery at or below the free threshold, waives it above", () => {
-  const atThreshold = priceOrder(catalog(), {
-    plates: [plate({ size: "large" }), plate({ size: "large" })],
-    extras: { coke: 4 },
-    fulfillment: "delivery",
-  });
-  assertEquals(atThreshold.subtotal_cents, 6000);
-  assertEquals(atThreshold.delivery_fee_cents, 700);
+// --- free delivery: $60+ AND scheduled at least a day ahead ---------------
 
-  const above = priceOrder(catalog(), {
-    plates: [plate({ size: "large" }), plate({ size: "large" })],
-    extras: { coke: 5 },
-    fulfillment: "delivery",
-  });
-  assertEquals(above.delivery_fee_cents, 0);
+const NOW = new Date("2026-11-02T20:00:00Z"); // noon PST
+const laterToday = new Date("2026-11-03T02:00:00Z"); // 6pm PST, same kitchen day
+const tomorrow = new Date("2026-11-03T20:00:00Z"); // noon PST, next day
+
+const timing = (over: Partial<DeliveryTiming> = {}): DeliveryTiming => ({
+  scheduledFor: null,
+  now: NOW,
+  ...over,
+});
+
+/** Exactly $60.00: two large plates plus four cokes. */
+const sixtyDollarCart = {
+  plates: [plate({ size: "large" }), plate({ size: "large" })],
+  extras: { coke: 4 },
+  fulfillment: "delivery" as const,
+};
+
+Deno.test("free delivery needs both the spend and the lead time", () => {
+  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: tomorrow }));
+  assertEquals(priced.subtotal_cents, 6000);
+  assertEquals(priced.delivery_fee_cents, 0);
+  assertEquals(priced.free_delivery.reason, "earned");
+});
+
+Deno.test("$60 exactly qualifies — the threshold is inclusive", () => {
+  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: tomorrow }));
+  assertEquals(priced.subtotal_cents, 6000);
+  assertEquals(priced.free_delivery.free, true);
+});
+
+Deno.test("a big ASAP order still pays delivery", () => {
+  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing());
+  assertEquals(priced.delivery_fee_cents, 700);
+  assertEquals(priced.free_delivery.reason, "needs_lead_time");
+});
+
+Deno.test("a big same-day scheduled order still pays delivery", () => {
+  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: laterToday }));
+  assertEquals(priced.delivery_fee_cents, 700);
+  assertEquals(priced.free_delivery.reason, "needs_lead_time");
+});
+
+Deno.test("scheduling ahead alone isn't enough below the threshold", () => {
+  const priced = priceOrder(
+    catalog(),
+    { plates: [plate()], fulfillment: "delivery" },
+    0,
+    timing({ scheduledFor: tomorrow }),
+  );
+  assertEquals(priced.delivery_fee_cents, 700);
+  assertEquals(priced.free_delivery.reason, "needs_spend");
+  assertEquals(priced.free_delivery.shortfall_cents, 6000 - 1800);
+});
+
+Deno.test("a small ASAP order is told it needs both", () => {
+  const priced = priceOrder(catalog(), { plates: [plate()], fulfillment: "delivery" }, 0, timing());
+  assertEquals(priced.free_delivery.reason, "needs_both");
+  assertEquals(priced.free_delivery.shortfall_cents, 4200);
+});
+
+Deno.test("evening-before counts as a day ahead, even though it is under 24h", () => {
+  // 7pm Monday ordering for noon Tuesday: 17 hours, but a different kitchen day.
+  const monday7pm = new Date("2026-11-03T03:00:00Z");
+  const tuesdayNoon = new Date("2026-11-03T20:00:00Z");
+  const priced = priceOrder(
+    catalog(),
+    sixtyDollarCart,
+    0,
+    timing({ now: monday7pm, scheduledFor: tuesdayNoon }),
+  );
+  assertEquals(priced.delivery_fee_cents, 0);
+});
+
+Deno.test("weekly standing orders never pay delivery", () => {
+  const priced = priceOrder(
+    catalog(),
+    { plates: [plate()], fulfillment: "delivery" },
+    0,
+    timing({ isSubscription: true }),
+  );
+  assertEquals(priced.delivery_fee_cents, 0);
+  assertEquals(priced.free_delivery.reason, "subscription");
+});
+
+Deno.test("the subscription perk can be switched off", () => {
+  const priced = priceOrder(
+    catalog({ subscription_free_delivery: false }),
+    { plates: [plate()], fulfillment: "delivery" },
+    0,
+    timing({ isSubscription: true }),
+  );
+  assertEquals(priced.delivery_fee_cents, 700);
+});
+
+Deno.test("a zero lead requirement restores the size-only rule", () => {
+  const priced = priceOrder(
+    catalog({ free_delivery_min_lead_days: 0 }),
+    sixtyDollarCart,
+    0,
+    timing(),
+  );
+  assertEquals(priced.delivery_fee_cents, 0);
 });
 
 Deno.test("never charges delivery for pickup", () => {
   const priced = priceOrder(catalog(), { plates: [plate()], fulfillment: "pickup" });
   assertEquals(priced.delivery_fee_cents, 0);
+  assertEquals(priced.free_delivery.reason, "pickup");
 });
 
 Deno.test("taxes food only — not delivery or tip", () => {

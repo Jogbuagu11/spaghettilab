@@ -72,6 +72,8 @@ interface SettingsRow {
   tax_rate: string | number;
   delivery_fee_cents: number;
   free_delivery_over_cents: number;
+  free_delivery_min_lead_days: number;
+  subscription_free_delivery: boolean;
   prep_minutes: number;
   slot_interval_minutes: number;
   delivery_radius_miles: string | number;
@@ -126,6 +128,12 @@ async function fetchStorefront(): Promise<Storefront> {
       taxRate: s ? Number(s.tax_rate) : STATIC_MENU.taxRate,
       deliveryFee: s ? s.delivery_fee_cents : STATIC_MENU.deliveryFee,
       freeDeliveryOver: s ? s.free_delivery_over_cents : STATIC_MENU.freeDeliveryOver,
+      freeDeliveryMinLeadDays: s
+        ? Number(s.free_delivery_min_lead_days ?? 1)
+        : STATIC_MENU.freeDeliveryMinLeadDays,
+      subscriptionFreeDelivery: s
+        ? (s.subscription_free_delivery ?? true)
+        : STATIC_MENU.subscriptionFreeDelivery,
       prepMinutes: s ? s.prep_minutes : STATIC_MENU.prepMinutes,
       acceptingOrders: s ? s.is_accepting_orders : true,
       closedMessage: s?.closed_message ?? STATIC_MENU.closedMessage,
