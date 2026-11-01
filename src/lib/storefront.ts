@@ -68,6 +68,37 @@ interface OptionRow {
 type MenuGroup = "size" | "heat" | "protein" | "customization" | "extra";
 
 /** The storefront-safe columns of `settings`; RLS withholds the rest. */
+/**
+ * Explicit column list, not `*`.
+ *
+ * `settings` is exposed to anon through a column-level grant that withholds
+ * pickup_address, and a column-level grant makes `select *` fail outright if
+ * *any* requested column isn't covered. Asking for exactly what we're allowed
+ * to read keeps a newly added column from silently breaking the storefront.
+ */
+export const SETTINGS_COLUMNS = [
+  "is_accepting_orders",
+  "closed_message",
+  "tax_rate",
+  "delivery_fee_cents",
+  "free_delivery_over_cents",
+  "free_delivery_min_lead_days",
+  "subscription_free_delivery",
+  "prep_minutes",
+  "slot_interval_minutes",
+  "delivery_radius_miles",
+  "origin_postal_code",
+  "contact_email",
+  "contact_phone",
+  "instagram_url",
+  "tiktok_url",
+  "facebook_url",
+  "google_review_url",
+  "yelp_url",
+  "ga4_measurement_id",
+  "meta_pixel_id",
+].join(",");
+
 interface SettingsRow {
   tax_rate: string | number;
   delivery_fee_cents: number;
@@ -105,11 +136,16 @@ async function fetchStorefront(): Promise<Storefront> {
       .from("menu_options")
       .select("id, group_name, label, description, price_cents, sort_order, is_available")
       .order("sort_order"),
-    supabase.from("settings").select("*").eq("id", 1).maybeSingle(),
+    supabase.from("settings").select(SETTINGS_COLUMNS).eq("id", 1).maybeSingle(),
     supabase.from("business_hours").select("*").order("day_of_week"),
   ]);
 
   if (options.error) throw options.error;
+  // A settings failure falls back to defaults rather than blanking the menu,
+  // but it must not be silent — that's how the missing grant went unnoticed.
+  if (settings.error) {
+    console.error("[spaghetti-lab] settings unreadable, using defaults", settings.error);
+  }
 
   const rows = (options.data ?? []) as OptionRow[];
   const group = (name: MenuGroup) => rows.filter((r) => r.group_name === name).map(toItem);
