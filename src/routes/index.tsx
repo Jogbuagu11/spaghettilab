@@ -71,7 +71,7 @@ function Home() {
         <h2 className="text-3xl font-black sm:text-4xl">Spaghetti delivery in Berryessa & North San Jose</h2>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           <Info icon={MapPin} title="Pickup in Berryessa">Exact address is shared once your order is placed.</Info>
-          <Info icon={Truck} title="Delivery within 5 miles of 95131">$7 delivery. <strong>Free</strong> on $60+ ordered a day ahead, and on every weekly standing order.</Info>
+          <Info icon={Truck} title="Delivery within 5 miles of 95131">$7 delivery. <strong>Free</strong> on $60+ with scheduled delivery, and on every weekly standing order.</Info>
           <Info icon={Clock} title="Open 7 days, 12pm–8pm">Order anytime, 24/7. Outside hours, just schedule a slot.</Info>
         </div>
       </section>

@@ -324,7 +324,7 @@ function OrderPage() {
               >
                 <span className="font-bold">Just this once</span>
                 <span className="text-xs font-normal opacity-80">
-                  Free delivery on {formatMoney(menu.freeDeliveryOver)}+ booked a day ahead.
+                  Free delivery on {formatMoney(menu.freeDeliveryOver)}+ with scheduled delivery.
                 </span>
               </button>
               <button
