@@ -26,9 +26,11 @@
 - [x] spaghettilab.store verified in Resend
 - [x] Square sandbox webhook created, catalog seeded
 - [x] Pickup address set (1183 Benny Ct)
-- [ ] Supabase service role key + access token, so the edge functions can be deployed
-- [ ] Run `supabase/cron-jobs.sql` (weekly charges don't happen without it)
-- [ ] Register spaghettilab.store for Apple Pay in the Square dashboard
+- [ ] Supabase **personal access token** (`sbp_…`) so the edge functions can be deployed
+- [x] Cron jobs scheduled (run-subscriptions daily, send-review-requests hourly)
+- [ ] Set Vercel env vars, then push to main to deploy
+- [ ] Decide apex vs www as the canonical domain (Vercel currently prefers www)
+- [ ] Register the domain for Apple Pay (file is in place; needs the site deployed first)
 - [ ] Phone number and social URLs (enter in /admin -> Settings)
 - [ ] Rotate the credentials that were shared in plaintext
 - [ ] Switch Square from sandbox to production once test orders look right

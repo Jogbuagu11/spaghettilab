@@ -178,8 +178,9 @@ idempotency guard, so a retried webhook can't send a second receipt.
 | `subscription_failed_*` | A weekly charge is declined |
 | `subscription_cancelled` | Standing order cancelled |
 
-Schedule the weekly subscription run and the review sweep by following
-`supabase/cron-jobs.sql`. The subscription job is **required** for standing orders to charge.
+Schedule the weekly subscription run and the review sweep with `supabase/cron-jobs.sql`
+(already applied to this project — `select jobname, schedule, active from cron.job` to check).
+The subscription job is **required** for standing orders to charge.
 
 ### 4. Vercel
 
@@ -192,6 +193,28 @@ VITE_SQUARE_APP_ID, VITE_SQUARE_LOCATION_ID, VITE_SQUARE_ENVIRONMENT
 ```
 
 Add `spaghettilab.store` as the production domain.
+
+> **Apex vs www.** Vercel currently serves `www.spaghettilab.store` and 308-redirects the apex
+> to it. Canonical URLs, the sitemap and `SITE_URL` all use the apex, so either set the apex as
+> the primary domain in Vercel (recommended — it's the name on the storefront) or point
+> `VITE_SITE_URL` and `SITE_URL` at the `www` host. Leaving them mismatched means every
+> canonical URL and share link takes an extra redirect.
+
+### Apple Pay
+
+`public/.well-known/apple-developer-merchantid-domain-association` is Square's domain
+association file; Vite copies it into the build and Vercel's filesystem handler serves it
+before the SSR fallback. **It must be live before registration will succeed**, so deploy
+first, then register:
+
+```sh
+curl -X POST https://connect.squareup.com/v2/apple-pay/domains \
+  -H "Authorization: Bearer $SQUARE_PROD_ACCESS_TOKEN" \
+  -H "Square-Version: 2025-09-24" -H "Content-Type: application/json" \
+  -d '{"domain_name": "spaghettilab.store"}'
+```
+
+Register whichever host actually serves the file without a redirect.
 
 ---
 
