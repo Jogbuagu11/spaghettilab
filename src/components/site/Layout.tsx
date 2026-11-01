@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Facebook, Instagram, Music2, ShoppingBag, Star } from "lucide-react";
+import { Facebook, House, Instagram, Music2, ShoppingBag, Star, Utensils } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCart } from "@/lib/cart";
 import { formatMinutes } from "@/lib/schedule";
@@ -68,6 +68,8 @@ export function SiteFooter() {
     { icon: Instagram, label: "Instagram", url: settings.instagramUrl },
     { icon: Music2, label: "TikTok", url: settings.tiktokUrl },
     { icon: Facebook, label: "Facebook", url: settings.facebookUrl },
+    { icon: House, label: "Nextdoor", url: settings.nextdoorUrl },
+    { icon: Utensils, label: "Yelp", url: settings.yelpUrl },
     { icon: Star, label: "Google reviews", url: settings.googleReviewUrl },
   ].filter((s) => Boolean(s.url));
 

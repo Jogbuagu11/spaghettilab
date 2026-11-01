@@ -757,6 +757,7 @@ const SETTING_FIELDS: {
   { key: "facebook_url", label: "Facebook URL" },
   { key: "google_review_url", label: "Google review URL" },
   { key: "yelp_url", label: "Yelp URL" },
+  { key: "nextdoor_url", label: "Nextdoor URL" },
   { key: "ga4_measurement_id", label: "GA4 measurement ID", hint: "e.g. G-XXXXXXXXXX" },
   { key: "meta_pixel_id", label: "Meta Pixel ID" },
 ];

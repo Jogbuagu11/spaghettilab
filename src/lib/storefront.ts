@@ -11,6 +11,7 @@ export interface StorefrontSettings {
   facebookUrl: string | null;
   googleReviewUrl: string | null;
   yelpUrl: string | null;
+  nextdoorUrl: string | null;
   ga4MeasurementId: string | null;
   metaPixelId: string | null;
   deliveryRadiusMiles: number;
@@ -41,6 +42,7 @@ const DEFAULT_SETTINGS: StorefrontSettings = {
   facebookUrl: null,
   googleReviewUrl: null,
   yelpUrl: null,
+  nextdoorUrl: null,
   ga4MeasurementId: null,
   metaPixelId: null,
   deliveryRadiusMiles: 5,
@@ -95,6 +97,7 @@ export const SETTINGS_COLUMNS = [
   "facebook_url",
   "google_review_url",
   "yelp_url",
+  "nextdoor_url",
   "ga4_measurement_id",
   "meta_pixel_id",
 ].join(",");
@@ -118,6 +121,7 @@ interface SettingsRow {
   facebook_url: string | null;
   google_review_url: string | null;
   yelp_url: string | null;
+  nextdoor_url: string | null;
   ga4_measurement_id: string | null;
   meta_pixel_id: string | null;
 }
@@ -184,6 +188,7 @@ async function fetchStorefront(): Promise<Storefront> {
           facebookUrl: s.facebook_url,
           googleReviewUrl: s.google_review_url,
           yelpUrl: s.yelp_url,
+          nextdoorUrl: s.nextdoor_url,
           ga4MeasurementId: s.ga4_measurement_id,
           metaPixelId: s.meta_pixel_id,
           deliveryRadiusMiles: Number(s.delivery_radius_miles),
