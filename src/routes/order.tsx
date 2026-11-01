@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createSubscription, placeOrder } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { formatMoney } from "@/lib/menu";
-import { leadDays, orderTotals } from "@/lib/pricing";
+import { leadHours, orderTotals } from "@/lib/pricing";
 import { canOrderAsapWithHours, formatMinutes, slotsForHours } from "@/lib/schedule";
 import { pageMeta } from "@/lib/seo";
 import {
@@ -105,10 +105,53 @@ function OrderPage() {
   const firstFreeSlot = useMemo(
     () =>
       slots.find(
-        (s) => leadDays(new Date(s.iso), now ?? new Date()) >= menu.freeDeliveryMinLeadDays,
+        (s) => leadHours(new Date(s.iso), now ?? new Date()) >= menu.freeDeliveryMinLeadHours,
       ),
-    [slots, now, menu.freeDeliveryMinLeadDays],
+    [slots, now, menu.freeDeliveryMinLeadHours],
   );
+
+  // Tell the customer the moment lead time becomes the only thing standing
+  // between them and free delivery — that's when it's actionable. Keyed on the
+  // chosen slot so the minute-ticking clock can't make it fire repeatedly.
+  const freeDeliveryToastRef = useRef<string>("");
+  useEffect(() => {
+    const { reason, free } = totals.freeDelivery;
+
+    if (free || orderType !== "once" || fulfillment !== "delivery" || !when) {
+      freeDeliveryToastRef.current = "";
+      return;
+    }
+    // Only when the basket already qualifies and timing is the sole blocker;
+    // if the order is also under the spend threshold, hours aren't the point.
+    if (reason !== "needs_lead_time") return;
+
+    const key = `${when}:${totals.subtotal}`;
+    if (freeDeliveryToastRef.current === key) return;
+    freeDeliveryToastRef.current = key;
+
+    const hours = menu.freeDeliveryMinLeadHours;
+    toast.info(`Schedule ${hours}+ hours ahead to unlock free delivery`, {
+      description: `Orders with less than ${hours} hours' notice pay the ${formatMoney(menu.deliveryFee)} delivery fee.`,
+      duration: 7000,
+      ...(firstFreeSlot
+        ? {
+            action: {
+              label: `Use ${firstFreeSlot.label}`,
+              onClick: () => setWhen(firstFreeSlot.iso),
+            },
+          }
+        : {}),
+    });
+  }, [
+    when,
+    fulfillment,
+    orderType,
+    totals.freeDelivery,
+    totals.subtotal,
+    menu.freeDeliveryMinLeadHours,
+    menu.deliveryFee,
+    firstFreeSlot,
+  ]);
 
   // ------------------------------------------------------------ Square ----
   const cardRef = useRef<HTMLDivElement>(null);
@@ -461,7 +504,8 @@ function OrderPage() {
                       onClick={() => setWhen(firstFreeSlot.iso)}
                       className="w-full rounded-xl border-2 border-ink bg-accent p-3 text-left text-sm font-semibold text-accent-foreground"
                     >
-                      Book {firstFreeSlot.label} instead and delivery is free →
+                      Book {firstFreeSlot.label} or later — {menu.freeDeliveryMinLeadHours}+ hours
+                      ahead — and delivery is free →
                     </button>
                   )}
               </>

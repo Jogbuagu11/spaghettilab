@@ -85,19 +85,15 @@ export function hoursFor(
 }
 
 /**
- * Days since the epoch *in the kitchen's timezone*. Subtracting two of these
- * gives calendar days of notice, which is what "order a day ahead" means to a
- * customer — 7pm Monday for noon Tuesday counts, even though it's under 24h.
+ * Hours of notice between now and a scheduled time. ASAP is 0.
+ *
+ * Deliberately a wall-clock difference rather than a calendar comparison —
+ * "12 hours ahead" means the same thing in every timezone and across a DST
+ * boundary, which a day-based rule does not.
  */
-export function kitchenDayIndex(at: Date): number {
-  const p = kitchenParts(at);
-  return Math.floor(Date.UTC(p.year, p.month - 1, p.day) / 86_400_000);
-}
-
-/** Calendar days of notice between now and a scheduled time. ASAP is 0. */
-export function leadDays(scheduledFor: Date | null, now: Date): number {
+export function leadHours(scheduledFor: Date | null, now: Date): number {
   if (!scheduledFor) return 0;
-  return Math.max(0, kitchenDayIndex(scheduledFor) - kitchenDayIndex(now));
+  return Math.max(0, (scheduledFor.getTime() - now.getTime()) / 3_600_000);
 }
 
 export interface ResolvedTime {

@@ -68,8 +68,8 @@ export interface MenuData {
   taxRate: number;
   deliveryFee: number;
   freeDeliveryOver: number;
-  /** Calendar days of notice needed for free delivery. 0 = size threshold only. */
-  freeDeliveryMinLeadDays: number;
+  /** Hours of notice needed for free delivery. 0 = spend threshold only. */
+  freeDeliveryMinLeadHours: number;
   /** Weekly standing orders skip the delivery fee entirely. */
   subscriptionFreeDelivery: boolean;
   prepMinutes: number;
@@ -89,7 +89,7 @@ export const STATIC_MENU: MenuData = {
   taxRate: DEFAULT_TAX_RATE,
   deliveryFee: DELIVERY_FEE,
   freeDeliveryOver: FREE_DELIVERY_OVER,
-  freeDeliveryMinLeadDays: 1,
+  freeDeliveryMinLeadHours: 12,
   subscriptionFreeDelivery: true,
   prepMinutes: PREP_MINUTES,
   acceptingOrders: true,

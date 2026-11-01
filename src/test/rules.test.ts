@@ -37,10 +37,10 @@ describe("pricing", () => {
 describe("free delivery", () => {
   const sixtyDollars = () => [plate({ size: "large" }), plate({ size: "large" })];
   const now = pst(12);
-  const tomorrow = pst(36); // noon the next day
-  const laterToday = pst(18);
+  const tomorrow = pst(36); // 24h out
+  const inSixHours = pst(18); // under the 12h threshold
 
-  it("waives delivery at $60 when scheduled a day ahead", () => {
+  it("waives delivery at $60 when scheduled 12+ hours ahead", () => {
     const t = orderTotals(sixtyDollars(), { coke: 4 }, "delivery", 0, undefined, {
       scheduledFor: tomorrow,
       now,
@@ -59,15 +59,24 @@ describe("free delivery", () => {
     expect(t.freeDelivery.reason).toBe("needs_lead_time");
   });
 
-  it("still charges a big same-day scheduled order", () => {
+  it("still charges a big order scheduled under 12 hours out", () => {
     const t = orderTotals(sixtyDollars(), { coke: 4 }, "delivery", 0, undefined, {
-      scheduledFor: laterToday,
+      scheduledFor: inSixHours,
       now,
     });
     expect(t.delivery).toBe(700);
+    expect(t.freeDelivery.reason).toBe("needs_lead_time");
   });
 
-  it("still charges a small order booked a day ahead", () => {
+  it("treats exactly 12 hours as qualifying", () => {
+    const t = orderTotals(sixtyDollars(), { coke: 4 }, "delivery", 0, undefined, {
+      scheduledFor: pst(24),
+      now,
+    });
+    expect(t.delivery).toBe(0);
+  });
+
+  it("still charges a small order booked well ahead", () => {
     const t = orderTotals([plate()], {}, "delivery", 0, undefined, {
       scheduledFor: tomorrow,
       now,

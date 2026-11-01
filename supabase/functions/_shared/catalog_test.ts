@@ -42,7 +42,7 @@ function catalog(overrides: Partial<Catalog["settings"]> = {}, soldOut: string[]
       tax_rate: 0.09375,
       delivery_fee_cents: 700,
       free_delivery_over_cents: 6000,
-      free_delivery_min_lead_days: 1,
+      free_delivery_min_lead_hours: 12,
       subscription_free_delivery: true,
       prep_minutes: 15,
       slot_interval_minutes: 15,
@@ -153,8 +153,9 @@ Deno.test("deduplicates repeated customizations", () => {
 // --- free delivery: $60+ AND scheduled at least a day ahead ---------------
 
 const NOW = new Date("2026-11-02T20:00:00Z"); // noon PST
-const laterToday = new Date("2026-11-03T02:00:00Z"); // 6pm PST, same kitchen day
-const tomorrow = new Date("2026-11-03T20:00:00Z"); // noon PST, next day
+const inSixHours = new Date("2026-11-03T02:00:00Z"); // 6pm PST — under 12h
+const inTwelveHours = new Date("2026-11-03T08:00:00Z"); // exactly 12h
+const tomorrow = new Date("2026-11-03T20:00:00Z"); // 24h out
 
 const timing = (over: Partial<DeliveryTiming> = {}): DeliveryTiming => ({
   scheduledFor: null,
@@ -169,7 +170,7 @@ const sixtyDollarCart = {
   fulfillment: "delivery" as const,
 };
 
-Deno.test("free delivery needs both the spend and the lead time", () => {
+Deno.test("free delivery needs both the spend and 12 hours' notice", () => {
   const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: tomorrow }));
   assertEquals(priced.subtotal_cents, 6000);
   assertEquals(priced.delivery_fee_cents, 0);
@@ -188,10 +189,22 @@ Deno.test("a big ASAP order still pays delivery", () => {
   assertEquals(priced.free_delivery.reason, "needs_lead_time");
 });
 
-Deno.test("a big same-day scheduled order still pays delivery", () => {
-  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: laterToday }));
+Deno.test("a big order scheduled under 12 hours out still pays delivery", () => {
+  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: inSixHours }));
   assertEquals(priced.delivery_fee_cents, 700);
   assertEquals(priced.free_delivery.reason, "needs_lead_time");
+});
+
+Deno.test("exactly 12 hours out qualifies — the threshold is inclusive", () => {
+  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: inTwelveHours }));
+  assertEquals(priced.delivery_fee_cents, 0);
+  assertEquals(priced.free_delivery.reason, "earned");
+});
+
+Deno.test("one minute under 12 hours does not", () => {
+  const justShort = new Date(inTwelveHours.getTime() - 60_000);
+  const priced = priceOrder(catalog(), sixtyDollarCart, 0, timing({ scheduledFor: justShort }));
+  assertEquals(priced.delivery_fee_cents, 700);
 });
 
 Deno.test("scheduling ahead alone isn't enough below the threshold", () => {
@@ -212,17 +225,18 @@ Deno.test("a small ASAP order is told it needs both", () => {
   assertEquals(priced.free_delivery.shortfall_cents, 4200);
 });
 
-Deno.test("evening-before counts as a day ahead, even though it is under 24h", () => {
-  // 7pm Monday ordering for noon Tuesday: 17 hours, but a different kitchen day.
-  const monday7pm = new Date("2026-11-03T03:00:00Z");
-  const tuesdayNoon = new Date("2026-11-03T20:00:00Z");
+Deno.test("the threshold is wall-clock hours, not calendar days", () => {
+  // 11pm for 9am next morning is a different calendar day but only 10 hours.
+  const lateNight = new Date("2026-11-03T07:00:00Z");
+  const nextMorning = new Date("2026-11-03T17:00:00Z");
   const priced = priceOrder(
     catalog(),
     sixtyDollarCart,
     0,
-    timing({ now: monday7pm, scheduledFor: tuesdayNoon }),
+    timing({ now: lateNight, scheduledFor: nextMorning }),
   );
-  assertEquals(priced.delivery_fee_cents, 0);
+  assertEquals(priced.delivery_fee_cents, 700);
+  assertEquals(priced.free_delivery.reason, "needs_lead_time");
 });
 
 Deno.test("weekly standing orders never pay delivery", () => {
@@ -248,7 +262,7 @@ Deno.test("the subscription perk can be switched off", () => {
 
 Deno.test("a zero lead requirement restores the size-only rule", () => {
   const priced = priceOrder(
-    catalog({ free_delivery_min_lead_days: 0 }),
+    catalog({ free_delivery_min_lead_hours: 0 }),
     sixtyDollarCart,
     0,
     timing(),

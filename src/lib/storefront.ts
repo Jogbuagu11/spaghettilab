@@ -82,7 +82,7 @@ export const SETTINGS_COLUMNS = [
   "tax_rate",
   "delivery_fee_cents",
   "free_delivery_over_cents",
-  "free_delivery_min_lead_days",
+  "free_delivery_min_lead_hours",
   "subscription_free_delivery",
   "prep_minutes",
   "slot_interval_minutes",
@@ -103,7 +103,7 @@ interface SettingsRow {
   tax_rate: string | number;
   delivery_fee_cents: number;
   free_delivery_over_cents: number;
-  free_delivery_min_lead_days: number;
+  free_delivery_min_lead_hours: number;
   subscription_free_delivery: boolean;
   prep_minutes: number;
   slot_interval_minutes: number;
@@ -164,9 +164,9 @@ async function fetchStorefront(): Promise<Storefront> {
       taxRate: s ? Number(s.tax_rate) : STATIC_MENU.taxRate,
       deliveryFee: s ? s.delivery_fee_cents : STATIC_MENU.deliveryFee,
       freeDeliveryOver: s ? s.free_delivery_over_cents : STATIC_MENU.freeDeliveryOver,
-      freeDeliveryMinLeadDays: s
-        ? Number(s.free_delivery_min_lead_days ?? 1)
-        : STATIC_MENU.freeDeliveryMinLeadDays,
+      freeDeliveryMinLeadHours: s
+        ? Number(s.free_delivery_min_lead_hours ?? 12)
+        : STATIC_MENU.freeDeliveryMinLeadHours,
       subscriptionFreeDelivery: s
         ? (s.subscription_free_delivery ?? true)
         : STATIC_MENU.subscriptionFreeDelivery,

@@ -33,7 +33,7 @@ describe("storefront settings query", () => {
       "tax_rate",
       "delivery_fee_cents",
       "free_delivery_over_cents",
-      "free_delivery_min_lead_days",
+      "free_delivery_min_lead_hours",
       "subscription_free_delivery",
     ]) {
       expect(columns).toContain(col);

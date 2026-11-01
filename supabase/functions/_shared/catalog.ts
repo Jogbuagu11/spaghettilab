@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@^2.118.0";
 import { PublicError } from "./http.ts";
-import { leadDays } from "./schedule.ts";
+import { leadHours } from "./schedule.ts";
 
 export interface MenuOption {
   id: string;
@@ -16,7 +16,7 @@ export interface Settings {
   tax_rate: number;
   delivery_fee_cents: number;
   free_delivery_over_cents: number;
-  free_delivery_min_lead_days: number;
+  free_delivery_min_lead_hours: number;
   subscription_free_delivery: boolean;
   prep_minutes: number;
   slot_interval_minutes: number;
@@ -64,7 +64,7 @@ export async function loadCatalog(db: SupabaseClient): Promise<Catalog> {
       ...(settings.data as Settings),
       tax_rate: Number(settings.data.tax_rate),
       delivery_radius_miles: Number(settings.data.delivery_radius_miles),
-      free_delivery_min_lead_days: Number(settings.data.free_delivery_min_lead_days ?? 1),
+      free_delivery_min_lead_hours: Number(settings.data.free_delivery_min_lead_hours ?? 12),
       origin_lat: Number(settings.data.origin_lat),
       origin_lng: Number(settings.data.origin_lng),
     },
@@ -123,14 +123,14 @@ export interface FreeDeliveryResult {
   reason: "pickup" | "subscription" | "earned" | "needs_lead_time" | "needs_spend" | "needs_both";
   /** Cents still needed to reach the spend threshold, 0 once met. */
   shortfall_cents: number;
-  lead_days_required: number;
+  lead_hours_required: number;
 }
 
 /**
  * Free delivery now takes planning, not just a big basket: the order must
  * clear the spend threshold *and* be scheduled far enough ahead. Weekly
- * standing orders bypass both. Setting free_delivery_min_lead_days to 0
- * restores the old size-only rule.
+ * standing orders bypass both. Setting free_delivery_min_lead_hours to 0
+ * restores the size-only rule.
  */
 export function evaluateFreeDelivery(
   subtotal: number,
@@ -138,8 +138,8 @@ export function evaluateFreeDelivery(
   fulfillment: "pickup" | "delivery",
   timing: DeliveryTiming,
 ): FreeDeliveryResult {
-  const required = settings.free_delivery_min_lead_days;
-  const base = { lead_days_required: required, shortfall_cents: 0 };
+  const required = settings.free_delivery_min_lead_hours;
+  const base = { lead_hours_required: required, shortfall_cents: 0 };
 
   if (fulfillment === "pickup") return { ...base, free: true, reason: "pickup" };
 
@@ -149,7 +149,7 @@ export function evaluateFreeDelivery(
 
   // "$60 and over" is inclusive.
   const spendMet = subtotal >= settings.free_delivery_over_cents;
-  const leadMet = leadDays(timing.scheduledFor, timing.now) >= required;
+  const leadMet = leadHours(timing.scheduledFor, timing.now) >= required;
   const shortfall = spendMet ? 0 : settings.free_delivery_over_cents - subtotal;
 
   if (spendMet && leadMet) return { ...base, free: true, reason: "earned" };

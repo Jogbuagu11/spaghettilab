@@ -21,7 +21,7 @@ function catalog(closedDays: number[] = []): Catalog {
       tax_rate: 0.09375,
       delivery_fee_cents: 700,
       free_delivery_over_cents: 6000,
-      free_delivery_min_lead_days: 1,
+      free_delivery_min_lead_hours: 12,
       subscription_free_delivery: true,
       prep_minutes: 15,
       slot_interval_minutes: 15,

@@ -7,7 +7,6 @@ import {
   type ProteinId,
   type SizeId,
 } from "./menu";
-import { TZ } from "./schedule";
 
 export interface Plate {
   id: string;
@@ -49,7 +48,7 @@ export interface FreeDeliveryResult {
   reason: FreeDeliveryReason;
   /** Cents still needed to reach the spend threshold; 0 once met. */
   shortfallCents: number;
-  leadDaysRequired: number;
+  leadHoursRequired: number;
 }
 
 /** Context the free-delivery rule needs beyond the cart. */
@@ -60,24 +59,13 @@ export interface DeliveryTiming {
   isSubscription?: boolean;
 }
 
-const DAY_MS = 86_400_000;
-
 /**
- * Calendar days of notice in the kitchen's timezone — 7pm Monday for noon
- * Tuesday counts as a day ahead even though it's under 24 hours. Mirrors
- * `leadDays()` in the edge functions; the server stays authoritative.
+ * Hours of notice between now and a scheduled time. ASAP is 0. Mirrors
+ * `leadHours()` in the edge functions; the server stays authoritative.
  */
-export function leadDays(scheduledFor: Date | null, now: Date): number {
+export function leadHours(scheduledFor: Date | null, now: Date): number {
   if (!scheduledFor) return 0;
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const dayIndex = (at: Date) =>
-    Math.floor(Date.parse(`${formatter.format(at)}T00:00:00Z`) / DAY_MS);
-  return Math.max(0, dayIndex(scheduledFor) - dayIndex(now));
+  return Math.max(0, (scheduledFor.getTime() - now.getTime()) / 3_600_000);
 }
 
 const ASAP = (): DeliveryTiming => ({ scheduledFor: null, now: new Date() });
@@ -93,7 +81,7 @@ export function evaluateFreeDelivery(
   menu: MenuData = STATIC_MENU,
   timing: DeliveryTiming = ASAP(),
 ): FreeDeliveryResult {
-  const base = { leadDaysRequired: menu.freeDeliveryMinLeadDays, shortfallCents: 0 };
+  const base = { leadHoursRequired: menu.freeDeliveryMinLeadHours, shortfallCents: 0 };
 
   if (fulfillment === "pickup") return { ...base, free: true, reason: "pickup" };
   if (timing.isSubscription && menu.subscriptionFreeDelivery) {
@@ -101,7 +89,7 @@ export function evaluateFreeDelivery(
   }
 
   const spendMet = subtotal >= menu.freeDeliveryOver;
-  const leadMet = leadDays(timing.scheduledFor, timing.now) >= menu.freeDeliveryMinLeadDays;
+  const leadMet = leadHours(timing.scheduledFor, timing.now) >= menu.freeDeliveryMinLeadHours;
   const shortfallCents = spendMet ? 0 : menu.freeDeliveryOver - subtotal;
 
   if (spendMet && leadMet) return { ...base, free: true, reason: "earned" };

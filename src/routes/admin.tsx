@@ -521,6 +521,12 @@ const SETTING_FIELDS: {
   },
   { key: "delivery_fee_cents", label: "Delivery fee (cents)", type: "number" },
   { key: "free_delivery_over_cents", label: "Free delivery over (cents)", type: "number" },
+  {
+    key: "free_delivery_min_lead_hours",
+    label: "Free delivery needs (hours notice)",
+    hint: "Hours ahead an order must be scheduled. 0 = spend threshold only.",
+    type: "number",
+  },
   { key: "delivery_radius_miles", label: "Delivery radius (miles)", type: "number", step: "0.5" },
   { key: "prep_minutes", label: "Prep time (minutes)", type: "number" },
   { key: "instagram_url", label: "Instagram URL" },
