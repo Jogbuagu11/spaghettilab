@@ -70,6 +70,28 @@ async function cutOutBackground() {
     .then((buf) => sharp(buf).trim({ threshold: 0 }).png().toBuffer());
 }
 
+/**
+ * The full plate turns to mush at 16px — spaghetti, rim and garnish collapse
+ * into one smudge. Browser-tab icons therefore use a close crop of the
+ * meatball, which still reads as a sauced dome on noodles at that size.
+ *
+ * The crop deliberately excludes the steam: at 16px those thin squiggles eat
+ * most of the height and shrink the meatball to a dot. Larger surfaces (app
+ * icons, share cards) keep the whole plate, steam included.
+ */
+async function meatballCrop(logoBuf) {
+  const { width, height } = await sharp(logoBuf).metadata();
+  return sharp(logoBuf)
+    .extract({
+      left: Math.round(width * 0.28),
+      top: Math.round(height * 0.26),
+      width: Math.round(width * 0.48),
+      height: Math.round(height * 0.48),
+    })
+    .png()
+    .toBuffer();
+}
+
 async function resized(logoBuf, px) {
   return sharp(logoBuf)
     .resize(px, px, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
@@ -164,12 +186,13 @@ async function main() {
   await write("src/assets/logo.png", await resized(logo, 512));
   await write("public/logo-1024.png", await resized(logo, 1024));
 
-  console.log("favicons");
-  const icoSizes = [16, 32, 48];
+  console.log("favicons (meatball mark)");
+  const mark = await meatballCrop(logo);
   const icoPngs = [];
-  for (const size of icoSizes) icoPngs.push({ size, data: await resized(logo, size) });
+  for (const size of [16, 32, 48]) icoPngs.push({ size, data: await resized(mark, size) });
   await write("public/favicon.ico", buildIco(icoPngs));
-  await write("public/favicon-96x96.png", await resized(logo, 96));
+  await write("public/favicon-96x96.png", await resized(mark, 96));
+  await write("public/favicon-mark.png", await resized(mark, 512));
 
   console.log("app icons");
   const onCream = async (size, pad) => {

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@^2.118.0";
 import { PublicError } from "./http.ts";
 import { leadDays } from "./schedule.ts";
 

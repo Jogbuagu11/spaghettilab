@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@^2.118.0";
 import { FROM_EMAIL, REPLY_TO, requireEnv } from "../env.ts";
 import { toPlainText } from "./layout.ts";
 import type { RenderedEmail } from "./templates.ts";

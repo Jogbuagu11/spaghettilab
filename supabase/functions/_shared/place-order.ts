@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@^2.118.0";
 import { priceOrder, type Catalog, type CartInput, type PricedOrder } from "./catalog.ts";
 import { sendEmail } from "./emails/send.ts";
 import { kitchenAlert, orderConfirmation, type EmailOrder } from "./emails/templates.ts";
