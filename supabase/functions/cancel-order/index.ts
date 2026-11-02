@@ -108,7 +108,12 @@ Deno.serve(async (req) => {
     await Promise.allSettled([
       sendEmail(db, {
         to: updated.customer_email,
-        email: orderCancelled(emailOrder, reason, refunded, feeCents),
+        email: orderCancelled(emailOrder, reason, refunded, feeCents, {
+          pickupAddress: catalog.settings.pickup_address,
+          contactPhone: catalog.settings.contact_phone,
+          contactEmail: catalog.settings.contact_email,
+          googleReviewUrl: catalog.settings.google_review_url,
+        }),
         template: "order_cancelled",
         orderId: order.id,
         once: true,

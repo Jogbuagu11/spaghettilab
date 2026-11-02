@@ -6,6 +6,7 @@
  * Cancelling is deliberately one request with no confirmation step on the
  * server: recurring charges should always be trivially easy to stop.
  */
+import { loadCatalog } from "../_shared/catalog.ts";
 import { serviceClient } from "../_shared/db.ts";
 import { sendEmail } from "../_shared/emails/send.ts";
 import { subscriptionCancelled, type EmailSubscription } from "../_shared/emails/templates.ts";
@@ -98,6 +99,7 @@ Deno.serve(async (req) => {
       }
 
       case "cancel": {
+        const catalog = await loadCatalog(db);
         const { data: full } = await db
           .from("subscriptions")
           .select("square_card_id")
@@ -121,7 +123,12 @@ Deno.serve(async (req) => {
                 .eq("id", subscription.id)
                 .single()
             ).data?.customer_email ?? "",
-          email: subscriptionCancelled(subscription as unknown as EmailSubscription),
+          email: subscriptionCancelled(subscription as unknown as EmailSubscription, {
+            pickupAddress: catalog.settings.pickup_address,
+            contactPhone: catalog.settings.contact_phone,
+            contactEmail: catalog.settings.contact_email,
+            googleReviewUrl: catalog.settings.google_review_url,
+          }),
           template: "subscription_cancelled",
         });
 

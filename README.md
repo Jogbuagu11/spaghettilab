@@ -178,6 +178,7 @@ idempotency guard, so a retried webhook can't send a second receipt.
 | `kitchen_alert` | Payment succeeds (to `KITCHEN_EMAIL`) |
 | `order_preparing` / `order_ready` / `order_out_for_delivery` / `order_completed` | Admin status change |
 | `order_cancelled` | Admin cancels, with refund status |
+| *(all customer emails)* | carry a **Call / Email us** row under the main action |
 | `order_delivered` | A delivery is marked delivered — includes the drop-off photo |
 | `review_request` | 3 hours after completion (cron) |
 | `subscription_confirmed` | Weekly standing order created |

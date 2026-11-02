@@ -129,7 +129,12 @@ Deno.serve(async (req) => {
 
     await sendEmail(db, {
       to: customer.email,
-      email: subscriptionConfirmed(subscription as EmailSubscription),
+      email: subscriptionConfirmed(subscription as EmailSubscription, {
+        pickupAddress: catalog.settings.pickup_address,
+        contactPhone: catalog.settings.contact_phone,
+        contactEmail: catalog.settings.contact_email,
+        googleReviewUrl: catalog.settings.google_review_url,
+      }),
       template: "subscription_confirmed",
     });
 

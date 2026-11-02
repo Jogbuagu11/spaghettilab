@@ -115,6 +115,7 @@ Deno.serve(async (req) => {
     const ctx = {
       pickupAddress: catalog.settings.pickup_address,
       contactPhone: catalog.settings.contact_phone,
+      contactEmail: catalog.settings.contact_email,
       googleReviewUrl: catalog.settings.google_review_url,
     };
     const emailOrder: EmailOrder = {
@@ -129,7 +130,7 @@ Deno.serve(async (req) => {
     const isDelivery = updated.fulfillment === "delivery";
     const email =
       next === "cancelled" || next === "refunded"
-        ? orderCancelled(emailOrder, reason, refunded)
+        ? orderCancelled(emailOrder, reason, refunded, 0, ctx)
         : next === "completed" && isDelivery
           ? orderDelivered(emailOrder, ctx)
           : orderStatus(emailOrder, ctx, next);

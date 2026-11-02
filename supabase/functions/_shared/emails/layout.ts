@@ -25,6 +25,62 @@ export const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 export const escapeHtml = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+export interface ContactDetails {
+  phone?: string | null;
+  email?: string | null;
+}
+
+/**
+ * Outlined "get hold of us" row, below the main action.
+ *
+ * tel: and mailto: are the only two link schemes every mail client handles
+ * reliably, and both work from a phone without the customer having to find
+ * the website first. Rendered as table cells rather than flex because Outlook
+ * ignores display:flex entirely.
+ */
+/**
+ * E.164 is what `tel:` needs, but nobody wants to read "+14085921504".
+ * Falls back to the raw value for anything that isn't a US number.
+ */
+export function formatPhone(e164: string): string {
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
+}
+
+export function contactButtons(contact: ContactDetails): string {
+  const cells: string[] = [];
+
+  if (contact.phone) {
+    cells.push(`
+      <td style="padding:0 5px;">
+        <a href="tel:${escapeHtml(contact.phone)}" style="display:block;padding:11px 18px;border:2px solid ${BRAND.ink};border-radius:999px;background:${BRAND.card};font-family:${SANS};font-size:14px;font-weight:bold;color:${BRAND.ink};text-decoration:none;white-space:nowrap;">
+          Call ${escapeHtml(formatPhone(contact.phone))}
+        </a>
+      </td>`);
+  }
+
+  if (contact.email) {
+    cells.push(`
+      <td style="padding:0 5px;">
+        <a href="mailto:${escapeHtml(contact.email)}" style="display:block;padding:11px 18px;border:2px solid ${BRAND.ink};border-radius:999px;background:${BRAND.card};font-family:${SANS};font-size:14px;font-weight:bold;color:${BRAND.ink};text-decoration:none;white-space:nowrap;">
+          Email us
+        </a>
+      </td>`);
+  }
+
+  if (cells.length === 0) return "";
+
+  return `
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 0;">
+    <tr>
+      <td style="padding:0 0 7px;font-family:${SANS};font-size:12px;font-weight:bold;letter-spacing:1.2px;text-transform:uppercase;color:${BRAND.mutedText};">
+        Questions about this order?
+      </td>
+    </tr>
+    <tr><td><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${cells.join("")}</tr></table></td></tr>
+  </table>`;
+}
+
 export interface LayoutOptions {
   /** Inbox preview line. Without it clients scrape the first body text. */
   preheader: string;
@@ -33,6 +89,8 @@ export interface LayoutOptions {
   eyebrow?: string;
   body: string;
   cta?: { label: string; url: string };
+  /** Adds a call/email row under the action. Omitted for internal mail. */
+  contact?: ContactDetails;
   footerNote?: string;
 }
 
@@ -102,6 +160,7 @@ export function renderEmail(opts: LayoutOptions): string {
               <h1 style="margin:0 0 18px;font-family:${DISPLAY};font-size:30px;line-height:1.2;font-weight:bold;color:${BRAND.ink};letter-spacing:-0.6px;">${escapeHtml(opts.heading)}</h1>
               ${opts.body}
               ${opts.cta ? button(opts.cta.label, opts.cta.url) : ""}
+              ${opts.contact ? contactButtons(opts.contact) : ""}
             </td>
           </tr>
 

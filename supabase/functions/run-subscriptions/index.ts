@@ -135,7 +135,12 @@ Deno.serve(async (req) => {
 
       await sendEmail(db, {
         to: sub.customer_email,
-        email: subscriptionPaymentFailed(sub as EmailSubscription, MAX_FAILURES - failures),
+        email: subscriptionPaymentFailed(sub as EmailSubscription, MAX_FAILURES - failures, {
+          pickupAddress: catalog.settings.pickup_address,
+          contactPhone: catalog.settings.contact_phone,
+          contactEmail: catalog.settings.contact_email,
+          googleReviewUrl: catalog.settings.google_review_url,
+        }),
         template: `subscription_failed_${failures}`,
       });
 

@@ -180,6 +180,7 @@ async function completeLinkPaidOrder(
   const ctx = {
     pickupAddress: catalog.settings.pickup_address,
     contactPhone: catalog.settings.contact_phone,
+    contactEmail: catalog.settings.contact_email,
     googleReviewUrl: catalog.settings.google_review_url,
   };
   const emailOrder = { ...updated, items: items ?? [] } as EmailOrder;

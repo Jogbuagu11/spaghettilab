@@ -211,6 +211,7 @@ async function notify(
   const ctx = {
     pickupAddress: catalog.settings.pickup_address,
     contactPhone: catalog.settings.contact_phone,
+    contactEmail: catalog.settings.contact_email,
     googleReviewUrl: catalog.settings.google_review_url,
   };
   const kitchen = optionalEnv("KITCHEN_EMAIL");

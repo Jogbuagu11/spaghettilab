@@ -1,4 +1,4 @@
-import { SITE_URL } from "../env.ts";
+import { REPLY_TO, SITE_URL } from "../env.ts";
 import { formatReadyAt } from "../schedule.ts";
 import { BRAND, card, escapeHtml, label, money, paragraph, renderEmail } from "./layout.ts";
 
@@ -41,8 +41,19 @@ export interface EmailOrder {
 export interface EmailContext {
   pickupAddress: string | null;
   contactPhone: string | null;
+  contactEmail?: string | null;
   googleReviewUrl: string | null;
 }
+
+/**
+ * The call/email row every customer-facing email carries. Falls back to the
+ * reply-to address when a template has no settings context — an email button
+ * alone still beats no way to reach anyone.
+ */
+const contactOf = (ctx?: EmailContext) => ({
+  phone: ctx?.contactPhone ?? null,
+  email: ctx?.contactEmail ?? REPLY_TO,
+});
 
 export interface RenderedEmail {
   subject: string;
@@ -144,6 +155,7 @@ export function orderConfirmation(order: EmailOrder, ctx: EmailContext): Rendere
         ${receipt(order)}`,
       cta: { label: "Track your order", url: trackUrl(order) },
       footerNote: paymentFooter(order),
+      contact: contactOf(ctx),
     }),
   };
 }
@@ -207,6 +219,7 @@ export function orderStatus(
         status === "completed"
           ? { label: "Order again", url: `${SITE_URL}/menu` }
           : { label: "Track your order", url: trackUrl(order) },
+      contact: contactOf(ctx),
     }),
   };
 }
@@ -257,6 +270,7 @@ export function orderDelivered(order: EmailOrder, ctx: EmailContext): RenderedEm
       footerNote: ctx.googleReviewUrl
         ? `Enjoyed it? <a href="${ctx.googleReviewUrl}" style="color:${BRAND.mutedText};">Leave us a review</a>.`
         : "Something not right? Just reply to this email.",
+      contact: contactOf(ctx),
     }),
   };
 }
@@ -295,6 +309,7 @@ export function orderDelayed(order: EmailOrder, ctx: EmailContext): RenderedEmai
       footerNote: ctx.contactPhone
         ? `Need to change something? Call ${escapeHtml(ctx.contactPhone)}.`
         : "Need to change something? Just reply to this email.",
+      contact: contactOf(ctx),
     }),
   };
 }
@@ -305,6 +320,7 @@ export function orderCancelled(
   refunded: boolean,
   /** Retained because the food was already made. 0 for an early cancellation. */
   feeCents = 0,
+  ctx?: EmailContext,
 ): RenderedEmail {
   const refundCents = Math.max(0, order.total_cents - feeCents);
   return {
@@ -328,6 +344,7 @@ export function orderCancelled(
                 `your bank it can take 5–10 business days to appear.`,
         )}`,
       cta: { label: "Start a new order", url: `${SITE_URL}/menu` },
+      contact: contactOf(ctx),
     }),
   };
 }
@@ -346,6 +363,7 @@ export function reviewRequest(order: EmailOrder, ctx: EmailContext): RenderedEma
       footerNote: ctx.googleReviewUrl
         ? `Prefer Google? <a href="${ctx.googleReviewUrl}" style="color:${BRAND.mutedText};">Review us there instead</a>.`
         : undefined,
+      contact: contactOf(ctx),
     }),
   };
 }
@@ -416,7 +434,7 @@ function standingOrderCard(sub: EmailSubscription): string {
     </p>`);
 }
 
-export function subscriptionConfirmed(sub: EmailSubscription): RenderedEmail {
+export function subscriptionConfirmed(sub: EmailSubscription, ctx?: EmailContext): RenderedEmail {
   return {
     subject: `Your weekly spaghetti is set — ${sub.reference}`,
     html: renderEmail({
@@ -429,6 +447,7 @@ export function subscriptionConfirmed(sub: EmailSubscription): RenderedEmail {
         ${paragraph(`We'll charge your card and email a receipt the morning of each order, starting <strong>${escapeHtml(sub.next_run_date)}</strong>. You can skip a week, pause, or cancel any time — no notice needed.`)}`,
       cta: { label: "Manage your weekly order", url: manageUrl(sub) },
       footerNote: "Changes made before 9am on your delivery day apply to that week.",
+      contact: contactOf(ctx),
     }),
   };
 }
@@ -436,6 +455,7 @@ export function subscriptionConfirmed(sub: EmailSubscription): RenderedEmail {
 export function subscriptionPaymentFailed(
   sub: EmailSubscription,
   attemptsLeft: number,
+  ctx?: EmailContext,
 ): RenderedEmail {
   return {
     subject: `We couldn't charge your card — ${sub.reference}`,
@@ -452,11 +472,12 @@ export function subscriptionPaymentFailed(
             : `We've paused your standing order for now. Update your card to restart it whenever you're ready.`,
         )}`,
       cta: { label: "Update your card", url: manageUrl(sub) },
+      contact: contactOf(ctx),
     }),
   };
 }
 
-export function subscriptionCancelled(sub: EmailSubscription): RenderedEmail {
+export function subscriptionCancelled(sub: EmailSubscription, ctx?: EmailContext): RenderedEmail {
   return {
     subject: `Your weekly order is cancelled — ${sub.reference}`,
     html: renderEmail({
@@ -467,6 +488,7 @@ export function subscriptionCancelled(sub: EmailSubscription): RenderedEmail {
         ${paragraph(`Thanks for eating with us, ${firstName(sub.customer_name)}. Your weekly order is cancelled, your card has been removed, and you won't be charged again.`)}
         ${paragraph("If you change your mind, starting a new one takes about a minute.")}`,
       cta: { label: "Start a new weekly order", url: `${SITE_URL}/menu` },
+      contact: contactOf(ctx),
     }),
   };
 }
