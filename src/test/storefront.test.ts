@@ -40,3 +40,36 @@ describe("storefront settings query", () => {
     }
   });
 });
+
+import { minutesOverdue } from "@/lib/api";
+
+// A kitchen tablet sits open for hours, so lateness is computed from the
+// clock on every render rather than from anything stored.
+describe("overdue detection", () => {
+  const readyAt = "2026-11-02T02:00:00.000Z";
+  const at = (minutesAfter: number) => new Date(Date.parse(readyAt) + minutesAfter * 60_000);
+
+  it("reports nothing before the promised time", () => {
+    expect(minutesOverdue(readyAt, "preparing", at(-5))).toBeNull();
+    expect(minutesOverdue(readyAt, "preparing", at(0))).toBeNull();
+  });
+
+  it("counts whole minutes past it", () => {
+    expect(minutesOverdue(readyAt, "preparing", at(1))).toBe(1);
+    expect(minutesOverdue(readyAt, "preparing", at(18))).toBe(18);
+  });
+
+  it("ignores orders the kitchen is done with", () => {
+    for (const status of ["completed", "cancelled", "refunded", "pending_payment"]) {
+      expect(minutesOverdue(readyAt, status, at(60))).toBeNull();
+    }
+  });
+
+  it("still flags an out-for-delivery order that's late", () => {
+    expect(minutesOverdue(readyAt, "out_for_delivery", at(12))).toBe(12);
+  });
+
+  it("handles an order with no ready time", () => {
+    expect(minutesOverdue(null, "preparing", at(60))).toBeNull();
+  });
+});

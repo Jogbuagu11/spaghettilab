@@ -106,6 +106,9 @@ export interface TrackedOrder {
   customer_note: string | null;
   delivery_photo_url: string | null;
   delivery_note: string | null;
+  original_ready_at: string | null;
+  delay_minutes: number;
+  delay_reason: string | null;
   completed_at: string | null;
   created_at: string;
   items: TrackedOrderItem[];
@@ -272,4 +275,39 @@ export function manageSubscription(
     method: "POST",
     body: JSON.stringify({ token, action }),
   });
+}
+
+// ---------------------------------------------------------------- delays ----
+
+export interface DelayResult {
+  ok: true;
+  readyAt: string;
+  delayMinutes: number;
+  delayCount: number;
+  emailed: boolean;
+}
+
+export function delayOrder(input: {
+  orderId: string;
+  minutes: number;
+  reason?: string | undefined;
+  /** Defaults to true; false updates the time without emailing. */
+  notify?: boolean | undefined;
+}): Promise<DelayResult> {
+  return callFunction("delay-order", { method: "POST", body: JSON.stringify(input) });
+}
+
+/**
+ * Minutes an order is past its promised time, or null if it isn't late.
+ * Only meaningful while the order is still the kitchen's problem.
+ */
+export function minutesOverdue(
+  readyAt: string | null,
+  status: string,
+  now = new Date(),
+): number | null {
+  if (!readyAt) return null;
+  if (!["paid", "preparing", "ready", "out_for_delivery"].includes(status)) return null;
+  const diff = Math.floor((now.getTime() - new Date(readyAt).getTime()) / 60_000);
+  return diff > 0 ? diff : null;
 }

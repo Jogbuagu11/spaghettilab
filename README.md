@@ -306,6 +306,26 @@ supabase functions deploy whatsapp-webhook --no-verify-jwt
 Then point Meta's webhook at `https://YOUR-PROJECT-REF.supabase.co/functions/v1/whatsapp-webhook`,
 subscribe to `messages`, and use the same `WHATSAPP_VERIFY_TOKEN` for the handshake.
 
+## Running late
+
+`ready_at` is the *current* promise, not a historical record. The kitchen view
+flags any order past it (`⚠ 18 min overdue`, recomputed every 30s so a tablet left
+open stays honest) and offers **Running late → +15 / +30 / +45**, with an optional reason.
+
+Pushing it back moves `ready_at`, preserves the first promise in `original_ready_at`, and emails
+the customer the new time with the old one struck through. `/track` already polls every 30
+seconds, so it updates itself.
+
+Two details worth keeping:
+
+- The email template is keyed `order_delayed_{n}`. The once-per-template guard that stops
+  duplicate receipts would otherwise swallow every delay after the first.
+- A reason survives subsequent bumps unless a new one is typed — a second delay is usually the
+  same cause, and blanking it strips context from the customer's page.
+
+A delay is **not** a status. The order stays where it is in the workflow; only its promised time
+moves. Making it a status would force every transition table to account for it.
+
 ## Proof of delivery
 
 Marking a delivery **Delivered** in the admin opens the phone camera. The photo is optional —

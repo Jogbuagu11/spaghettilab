@@ -40,6 +40,10 @@ export interface OrderRow {
   tip_cents: number;
   total_cents: number;
   customer_note: string | null;
+  original_ready_at: string | null;
+  delay_minutes: number;
+  delay_count: number;
+  delay_reason: string | null;
   delivery_photo_url: string | null;
   delivery_note: string | null;
   completed_at: string | null;

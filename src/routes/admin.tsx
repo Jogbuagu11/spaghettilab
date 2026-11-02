@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Printer } from "lucide-react";
+import { AlarmClock, Camera, Printer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  delayOrder,
   manageSubscription,
+  minutesOverdue,
   updateOrderStatus,
   uploadDeliveryPhoto,
   type SubscriptionAction,
@@ -197,6 +199,71 @@ const NEXT_STATUS: Record<
   out_for_delivery: [],
 };
 
+const DELAY_PRESETS = [15, 30, 45] as const;
+
+/**
+ * Pushes the promised time back and emails the customer.
+ *
+ * Opens only when tapped so a busy kitchen view isn't cluttered with controls
+ * for orders that are on time.
+ */
+function DelayControl({
+  order,
+  onDelay,
+  busy,
+}: {
+  order: OrderRow;
+  onDelay: (minutes: number, reason: string | undefined) => void;
+  busy: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+
+  if (!open) {
+    return (
+      <Button variant="labGhost" size="sm" disabled={busy} onClick={() => setOpen(true)}>
+        <AlarmClock className="mr-2 size-4" aria-hidden />
+        Running late
+      </Button>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-2 rounded-xl border-2 border-ink bg-muted p-3">
+      <Input
+        className="h-10 bg-card"
+        placeholder="Reason, shown to the customer (optional)"
+        value={reason}
+        maxLength={200}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        {DELAY_PRESETS.map((m) => (
+          <Button
+            key={m}
+            variant="lab"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              onDelay(m, reason.trim() || undefined);
+              setOpen(false);
+              setReason("");
+            }}
+          >
+            +{m} min
+          </Button>
+        ))}
+        <Button variant="labGhost" size="sm" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Moves the time on their tracking page and emails them the new one.
+      </p>
+    </div>
+  );
+}
+
 const TICKET_WIDTH = 32; // characters that fit across 72mm at 11px mono
 
 /** Right-aligns a price against a label, the way a receipt printer expects. */
@@ -379,6 +446,14 @@ function OrdersTab() {
   const [showAll, setShowAll] = useState(false);
   const [ticket, setTicket] = useState<OrderRow | null>(null);
 
+  // Orders go overdue while the page sits open, so re-render each minute
+  // rather than relying on the 20s refetch to notice.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   // Mount the ticket, let React paint, then print — otherwise the dialog can
   // open against the previous order's markup.
   const printTicket = (order: OrderRow) => {
@@ -401,6 +476,20 @@ function OrdersTab() {
     },
     // The kitchen leaves this open on a tablet; keep it current.
     refetchInterval: 20_000,
+  });
+
+  const delay = useMutation({
+    mutationFn: (input: { orderId: string; minutes: number; reason?: string | undefined }) =>
+      delayOrder(input),
+    onSuccess: (r) => {
+      toast.success(
+        r.emailed
+          ? `Pushed back ${r.delayMinutes} min — customer emailed.`
+          : `Pushed back ${r.delayMinutes} min.`,
+      );
+      qc.invalidateQueries({ queryKey: ["admin-orders"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't delay that order."),
   });
 
   const move = useMutation({
@@ -447,6 +536,14 @@ function OrdersTab() {
                   {order.status.replace(/_/g, " ")}
                 </span>
               </p>
+              {(() => {
+                const late = minutesOverdue(order.ready_at, order.status, now);
+                return late ? (
+                  <p className="mt-1 inline-block rounded-full border-2 border-ink bg-destructive px-2 py-0.5 text-xs font-bold uppercase text-destructive-foreground">
+                    ⚠ {late} min overdue
+                  </p>
+                ) : null;
+              })()}
               <p className="text-sm text-muted-foreground">
                 {order.fulfillment === "pickup" ? "Pickup" : "Delivery"} ·{" "}
                 {order.ready_at
@@ -501,6 +598,22 @@ function OrdersTab() {
                 className="max-h-40 rounded-xl border-2 border-ink object-cover"
               />
             </a>
+          )}
+
+          {order.delay_count > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Pushed back {order.delay_minutes} min across {order.delay_count}{" "}
+              {order.delay_count === 1 ? "update" : "updates"}
+              {order.delay_reason ? ` — "${order.delay_reason}"` : ""}
+            </p>
+          )}
+
+          {["paid", "preparing", "ready", "out_for_delivery"].includes(order.status) && (
+            <DelayControl
+              order={order}
+              busy={delay.isPending}
+              onDelay={(minutes, reason) => delay.mutate({ orderId: order.id, minutes, reason })}
+            />
           )}
 
           {order.status === "out_for_delivery" && (

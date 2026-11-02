@@ -29,6 +29,9 @@ export interface EmailOrder {
   card_last4: string | null;
   track_token: string;
   customer_note: string | null;
+  original_ready_at?: string | null;
+  delay_minutes?: number;
+  delay_reason?: string | null;
   delivery_photo_url?: string | null;
   delivery_note?: string | null;
   completed_at?: string | null;
@@ -254,6 +257,44 @@ export function orderDelivered(order: EmailOrder, ctx: EmailContext): RenderedEm
       footerNote: ctx.googleReviewUrl
         ? `Enjoyed it? <a href="${ctx.googleReviewUrl}" style="color:${BRAND.mutedText};">Leave us a review</a>.`
         : "Something not right? Just reply to this email.",
+    }),
+  };
+}
+
+/**
+ * "Running late."
+ *
+ * Deliberately short and apologetic, leading with the new time — a customer
+ * reading this on their phone wants one fact. The original time is shown
+ * struck through so it's obvious what changed rather than leaving them to
+ * compare against an older email.
+ */
+export function orderDelayed(order: EmailOrder, ctx: EmailContext): RenderedEmail {
+  const newTime = order.ready_at ? formatReadyAt(new Date(order.ready_at)) : "shortly";
+  const wasTime = order.original_ready_at ? formatReadyAt(new Date(order.original_ready_at)) : null;
+  const minutes = order.delay_minutes ?? 0;
+
+  const verb = order.fulfillment === "pickup" ? "ready" : "with you";
+
+  return {
+    subject: `Running ~${minutes} min late — order ${order.order_number}`,
+    html: renderEmail({
+      preheader: `New time: ${newTime}. Sorry about that.`,
+      eyebrow: `Order ${order.order_number}`,
+      heading: `Sorry ${firstName(order.customer_name)} — we're running behind.`,
+      body: `
+        ${paragraph(`Your order will be ${verb} around <strong>${escapeHtml(newTime)}</strong>, about ${minutes} minutes later than planned.`)}
+        ${card(`
+          ${label("New time")}
+          <p style="margin:0;font-family:${SANS};font-size:22px;font-weight:bold;color:${BRAND.ink};">${escapeHtml(newTime)}</p>
+          ${wasTime ? `<p style="margin:6px 0 0;font-family:${SANS};font-size:14px;color:${BRAND.mutedText};">Originally <s>${escapeHtml(wasTime)}</s></p>` : ""}
+          ${order.delay_reason ? `<p style="margin:14px 0 0;padding-top:12px;border-top:1px solid ${BRAND.border};font-family:${SANS};font-size:14px;color:${BRAND.mutedText};">${escapeHtml(order.delay_reason)}</p>` : ""}
+        `)}
+        ${paragraph("Thanks for bearing with us — it's a one-person kitchen and we'd rather get it right than rush it.")}`,
+      cta: { label: "Track your order", url: trackUrl(order) },
+      footerNote: ctx.contactPhone
+        ? `Need to change something? Call ${escapeHtml(ctx.contactPhone)}.`
+        : "Need to change something? Just reply to this email.",
     }),
   };
 }

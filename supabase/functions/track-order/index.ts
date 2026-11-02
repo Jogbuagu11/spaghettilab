@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
          tip_cents, total_cents, square_receipt_url, card_brand, card_last4,
          customer_note, created_at, completed_at,
          delivery_photo_url, delivery_note,
+         original_ready_at, delay_minutes, delay_reason,
          order_items (label, quantity, unit_price_cents, total_price_cents, config, sort_order)`,
       )
       .eq("track_token", token)

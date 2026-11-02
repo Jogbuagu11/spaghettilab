@@ -37,6 +37,11 @@
 - [x] square-webhook completes link-paid orders into the normal pipeline
 - [ ] Meta credentials + webhook subscription (owner)
 
+## Phase 8 — running late (done)
+- [x] Overdue flagging in the kitchen view, recomputed on a timer
+- [x] Push the ready time back with an optional reason; customer emailed
+- [x] /track shows the new time, the original struck through, and an apology
+
 ## Still needs the owner
 - [x] Supabase project linked, migrations applied, admin user seeded
 - [x] spaghettilab.store verified in Resend

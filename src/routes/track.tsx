@@ -142,6 +142,13 @@ function TrackPage() {
 
   const { order, pickupAddress, contactPhone } = data;
   const cancelled = order.status === "cancelled" || order.status === "refunded";
+  const originalReadyAt = order.original_ready_at
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(order.original_ready_at))
+    : null;
   const readyAt = order.ready_at
     ? new Intl.DateTimeFormat("en-US", {
         timeZone: "America/Los_Angeles",
@@ -173,11 +180,29 @@ function TrackPage() {
         ) : (
           <>
             {readyAt && (
-              <p className="mt-2 flex items-center gap-2 text-muted-foreground">
+              <p className="mt-2 flex flex-wrap items-center gap-2 text-muted-foreground">
                 <Clock className="size-4" aria-hidden />
                 {order.scheduled_for ? "Scheduled for" : "Ready by"}{" "}
                 <strong className="text-foreground">{readyAt}</strong>
+                {order.delay_minutes > 0 && originalReadyAt && (
+                  <span className="text-sm">
+                    (was <s>{originalReadyAt}</s>)
+                  </span>
+                )}
               </p>
+            )}
+
+            {/* Say it plainly — a time that quietly moved is worse than a late
+                order the customer was told about. */}
+            {order.delay_minutes > 0 && (
+              <div className="mt-4 rounded-xl border-2 border-ink bg-muted p-4">
+                <p className="font-bold">
+                  Running about {order.delay_minutes} minutes behind — sorry!
+                </p>
+                {order.delay_reason && (
+                  <p className="mt-1 text-sm text-muted-foreground">{order.delay_reason}</p>
+                )}
+              </div>
             )}
 
             <div className="lab-card mt-6 p-5">
