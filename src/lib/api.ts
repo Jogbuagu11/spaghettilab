@@ -311,3 +311,43 @@ export function minutesOverdue(
   const diff = Math.floor((now.getTime() - new Date(readyAt).getTime()) / 60_000);
   return diff > 0 ? diff : null;
 }
+
+// ------------------------------------------------- delivery availability ----
+
+/** Deliveries already booked, keyed by the ISO start of each clock hour. */
+export async function deliveryLoad(from: Date, to: Date): Promise<Map<string, number>> {
+  if (!isSupabaseConfigured) return new Map();
+  const { data, error } = await supabase.rpc("delivery_load", {
+    from_ts: from.toISOString(),
+    to_ts: to.toISOString(),
+  });
+  if (error) {
+    // Availability is a courtesy; checkout re-checks server-side regardless.
+    console.warn("[spaghetti-lab] delivery load unavailable", error);
+    return new Map();
+  }
+  return new Map(
+    (data as { hour_start: string; booked: number }[]).map((r) => [
+      new Date(r.hour_start).toISOString(),
+      Number(r.booked),
+    ]),
+  );
+}
+
+export const hourKey = (iso: string) => {
+  const d = new Date(iso);
+  d.setMinutes(0, 0, 0);
+  return d.toISOString();
+};
+
+// ------------------------------------------------------- customer cancel ----
+
+export function cancelOrder(
+  token: string,
+  reason?: string,
+): Promise<{ ok: true; status: string; refunded: boolean; late_cancel?: boolean }> {
+  return callFunction("cancel-order", {
+    method: "POST",
+    body: JSON.stringify({ token, reason }),
+  });
+}

@@ -116,8 +116,11 @@ export function resolveReadyTime(
   >,
   when: string,
   now: Date,
+  /** Load-adjusted prep time; defaults to the configured base. */
+  prepMinutesOverride?: number,
 ): ResolvedTime {
-  const { prep_minutes, slot_interval_minutes } = catalog.settings;
+  const { slot_interval_minutes } = catalog.settings;
+  const prep_minutes = prepMinutesOverride ?? catalog.settings.prep_minutes;
 
   if (when === "asap") {
     const p = kitchenParts(now);

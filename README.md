@@ -306,6 +306,22 @@ supabase functions deploy whatsapp-webhook --no-verify-jwt
 Then point Meta's webhook at `https://YOUR-PROJECT-REF.supabase.co/functions/v1/whatsapp-webhook`,
 subscribe to `messages`, and use the same `WHATSAPP_VERIFY_TOKEN` for the handshake.
 
+## Capacity
+
+**Delivery is capped per clock hour** (default 3, admin-editable); **pickup never is**. Each
+delivery costs a round trip, so three in an hour is most of that hour — but plates for collection
+come off the same stove whether one person or ten turn up.
+
+Full hours simply don't appear in the customer's picker, with a prompt offering pickup instead.
+`create-order` re-checks server-side via `assertDeliveryCapacity`, because the browser's view of
+availability is always a moment stale and two people can take the last slot at once. The picker
+reads `delivery_load()`, a SECURITY DEFINER function returning only per-hour counts — the
+storefront never gets read access to orders.
+
+**Total orders are deliberately uncapped.** A busy queue stretches the ASAP estimate instead
+(`queue_minutes_per_order` per order already cooking, capped by `max_prep_minutes`), so a rush
+slows down rather than turning people away.
+
 ## Running late
 
 `ready_at` is the *current* promise, not a historical record. The kitchen view
@@ -325,6 +341,14 @@ Two details worth keeping:
 
 A delay is **not** a status. The order stays where it is in the workflow; only its promised time
 moves. Making it a status would force every transition table to account for it.
+
+## Allergens
+
+Tags live per menu option (`menu_options.allergens`), so a plate's warning is assembled from
+exactly what the customer chose rather than listing everything the kitchen touches. A standing
+cross-contamination notice sits under the plate builder, since a MEHKO can't guarantee separation.
+
+Editing them is a DB field today — worth surfacing in `/admin` if the menu grows.
 
 ## Proof of delivery
 

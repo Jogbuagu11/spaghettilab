@@ -10,6 +10,7 @@
  * failures as "log and move on" rather than asking to be replayed — a replay
  * would create a second order.
  */
+import { assertDeliveryCapacity, effectivePrepMinutes } from "../_shared/capacity.ts";
 import { loadCatalog, type CartInput } from "../_shared/catalog.ts";
 import { serviceClient } from "../_shared/db.ts";
 import { checkDeliveryAddress } from "../_shared/delivery.ts";
@@ -95,8 +96,10 @@ async function handleFlowReply(
       await loadExceptions(db),
       submission.when || "asap",
       now,
+      await effectivePrepMinutes(db, catalog),
     );
 
+    if (fulfillment === "delivery") await assertDeliveryCapacity(db, catalog, readyAt);
     const delivery =
       fulfillment === "delivery"
         ? await checkDeliveryAddress(catalog, requireString(submission.address, "address", 300))

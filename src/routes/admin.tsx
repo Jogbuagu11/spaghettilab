@@ -441,6 +441,74 @@ function DeliveredButton({
   );
 }
 
+/**
+ * Sold-out toggles on the orders screen.
+ *
+ * Running out happens mid-service, and making someone leave the ticket list
+ * to find the Menu tab means it doesn't get done — so the switches live where
+ * the kitchen already is.
+ */
+function SoldOutStrip() {
+  const qc = useQueryClient();
+  const { data: options } = useQuery({
+    queryKey: ["admin-menu"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("menu_options")
+        .select("*")
+        .order("group_name")
+        .order("sort_order");
+      if (error) throw error;
+      return data as MenuOptionRow[];
+    },
+  });
+
+  const toggle = useMutation({
+    mutationFn: async (input: { id: string; available: boolean }) => {
+      const { error } = await supabase
+        .from("menu_options")
+        .update({ is_available: input.available })
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: (_d, v) => {
+      toast.success(v.available ? "Back on the menu." : "Marked sold out.");
+      qc.invalidateQueries({ queryKey: ["admin-menu"] });
+      qc.invalidateQueries({ queryKey: ["storefront"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't update that."),
+  });
+
+  const soldOut = (options ?? []).filter((o) => !o.is_available);
+
+  return (
+    <details className="lab-card p-4" open={soldOut.length > 0}>
+      <summary className="cursor-pointer font-display text-lg font-bold">
+        Sold out{" "}
+        <span className="font-sans text-sm font-normal text-muted-foreground">
+          {soldOut.length > 0 ? `— ${soldOut.map((o) => o.label).join(", ")}` : "— nothing"}
+        </span>
+      </summary>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(options ?? []).map((o) => (
+          <button
+            key={o.id}
+            className="chip !min-h-9 !px-3 text-sm"
+            data-active={!o.is_available}
+            disabled={toggle.isPending}
+            onClick={() => toggle.mutate({ id: o.id, available: !o.is_available })}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Tap to toggle. Sold-out items vanish from the menu immediately and are refused at checkout.
+      </p>
+    </details>
+  );
+}
+
 function OrdersTab() {
   const qc = useQueryClient();
   const [showAll, setShowAll] = useState(false);
@@ -513,6 +581,7 @@ function OrdersTab() {
   return (
     <div className="space-y-4">
       <PrintTicket order={ticket} />
+      <SoldOutStrip />
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-black">
           {showAll ? "All orders" : "Live orders"}
@@ -865,6 +934,19 @@ const SETTING_FIELDS: {
   },
   { key: "delivery_radius_miles", label: "Delivery radius (miles)", type: "number", step: "0.5" },
   { key: "prep_minutes", label: "Prep time (minutes)", type: "number" },
+  {
+    key: "delivery_per_hour_limit",
+    label: "Deliveries per hour",
+    hint: "Full hours disappear from the customer's picker. Pickup is never capped.",
+    type: "number",
+  },
+  {
+    key: "queue_minutes_per_order",
+    label: "Extra wait per queued order (min)",
+    hint: "ASAP quotes stretch as the kitchen fills, instead of turning people away.",
+    type: "number",
+  },
+  { key: "max_prep_minutes", label: "Longest ASAP quote (minutes)", type: "number" },
   { key: "instagram_url", label: "Instagram URL" },
   { key: "tiktok_url", label: "TikTok URL" },
   { key: "facebook_url", label: "Facebook URL" },

@@ -57,6 +57,8 @@ export interface MenuItem {
   description?: string | null;
   price: number;
   available: boolean;
+  /** Lowercase tags, e.g. ["wheat", "dairy"]. Empty when none apply. */
+  allergens: string[];
 }
 
 export interface MenuData {
@@ -78,7 +80,13 @@ export interface MenuData {
 }
 
 const toItems = (xs: ReadonlyArray<{ id: string; label: string; price?: number }>): MenuItem[] =>
-  xs.map((x) => ({ id: x.id, label: x.label, price: x.price ?? 0, available: true }));
+  xs.map((x) => ({
+    id: x.id,
+    label: x.label,
+    price: x.price ?? 0,
+    available: true,
+    allergens: [],
+  }));
 
 export const STATIC_MENU: MenuData = {
   sizes: toItems(SIZES),

@@ -6,6 +6,7 @@
  * placeAndChargeOrder re-prices the cart from the database, writes the order
  * and charges the Square token.
  */
+import { assertDeliveryCapacity, effectivePrepMinutes } from "../_shared/capacity.ts";
 import { loadCatalog, type CartInput } from "../_shared/catalog.ts";
 import { serviceClient } from "../_shared/db.ts";
 import { checkDeliveryAddress } from "../_shared/delivery.ts";
@@ -52,10 +53,15 @@ Deno.serve(async (req) => {
       await loadExceptions(db),
       typeof payload.when === "string" ? payload.when : "asap",
       now,
+      // A busy queue stretches the ASAP estimate rather than refusing orders.
+      await effectivePrepMinutes(db, catalog),
     );
 
     let delivery: DeliveryDetails | null = null;
     if (fulfillment === "delivery") {
+      // Re-checked here as well as in the picker: the browser's view of which
+      // hours are full is a moment old, and two people can take the last slot.
+      await assertDeliveryCapacity(db, catalog, readyAt);
       delivery = await checkDeliveryAddress(
         catalog,
         requireString(payload.deliveryAddress, "delivery address", 300),

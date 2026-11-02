@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, createSubscription, placeOrder } from "@/lib/api";
+import { ApiError, createSubscription, deliveryLoad, hourKey, placeOrder } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { formatMoney } from "@/lib/menu";
 import { leadHours, orderTotals } from "@/lib/pricing";
 import { canOrderAsapWithHours, formatMinutes, slotsForHours } from "@/lib/schedule";
 import { pageMeta } from "@/lib/seo";
+import { useQuery } from "@tanstack/react-query";
 import {
   buildPaymentRequest,
   createPayments,
@@ -58,16 +59,43 @@ function OrderPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const slots = useMemo(
+  const allSlots = useMemo(
     () => (now ? slotsForHours(now, hours, menu.prepMinutes, settings.slotIntervalMinutes) : []),
     [now, hours, menu.prepMinutes, settings.slotIntervalMinutes],
   );
+
+  // Deliveries are capped per clock hour. Pickup is never capped, so this is
+  // only consulted for delivery. Checkout re-checks server-side — this just
+  // stops people picking an hour that's already gone.
+  const { data: bookedByHour } = useQuery({
+    queryKey: ["delivery-load"],
+    queryFn: () => deliveryLoad(new Date(), new Date(Date.now() + 4 * 86_400_000)),
+    enabled: fulfillment === "delivery",
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const slots = useMemo(() => {
+    if (fulfillment !== "delivery" || !bookedByHour) return allSlots;
+    const limit = settings.deliveryPerHourLimit;
+    if (limit <= 0) return [];
+    return allSlots.filter((s) => (bookedByHour.get(hourKey(s.iso)) ?? 0) < limit);
+  }, [allSlots, bookedByHour, fulfillment, settings.deliveryPerHourLimit]);
+
+  const hiddenByCapacity = allSlots.length - slots.length;
   const asapAvailable = now ? canOrderAsapWithHours(now, hours, menu.prepMinutes) : false;
 
   const [when, setWhen] = useState("");
   useEffect(() => {
     if (!when && now) setWhen(asapAvailable ? "asap" : (slots[0]?.iso ?? ""));
   }, [now, asapAvailable, slots, when]);
+
+  // The selected slot can fill up while the page is open — don't leave the
+  // customer pointed at a time they can no longer have.
+  useEffect(() => {
+    if (!when || when === "asap" || slots.length === 0) return;
+    if (!slots.some((s) => s.iso === when)) setWhen(slots[0]!.iso);
+  }, [slots, when]);
 
   const [orderType, setOrderType] = useState<OrderType>("once");
   const [weeklyDay, setWeeklyDay] = useState<number>(() => (new Date().getDay() + 2) % 7);
@@ -496,6 +524,28 @@ function OrderPage() {
                     </option>
                   ))}
                 </select>
+
+                {fulfillment === "delivery" && hiddenByCapacity > 0 && (
+                  <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+                    Some delivery times are fully booked and aren't shown.{" "}
+                    <button
+                      className="font-semibold text-primary underline"
+                      onClick={() => setFulfillment("pickup")}
+                    >
+                      Switch to pickup
+                    </button>{" "}
+                    — pickup is always available.
+                  </p>
+                )}
+
+                {fulfillment === "delivery" && slots.length === 0 && !asapAvailable && (
+                  <p className="rounded-xl border-2 border-ink bg-accent p-3 text-sm font-semibold text-accent-foreground">
+                    We're fully booked for delivery.{" "}
+                    <button className="underline" onClick={() => setFulfillment("pickup")}>
+                      Switch to pickup instead
+                    </button>
+                  </p>
+                )}
 
                 {fulfillment === "delivery" &&
                   totals.freeDelivery.reason === "needs_lead_time" &&

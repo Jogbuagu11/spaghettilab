@@ -35,6 +35,16 @@ function SoldOut() {
   return <span className="ml-1 text-xs font-normal text-muted-foreground">Sold out</span>;
 }
 
+/** Allergen tags, inline so the warning sits with the thing it describes. */
+function Allergens({ tags }: { tags: string[] }) {
+  if (tags.length === 0) return null;
+  return (
+    <span className="ml-1 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+      {tags.join(" · ")}
+    </span>
+  );
+}
+
 export function PlateBuilder() {
   const { addPlate, setOpen } = useCart();
   const { menu } = useStorefront();
@@ -122,6 +132,7 @@ export function PlateBuilder() {
                 <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
                   {formatMoney(p.price)}
                 </span>
+                <Allergens tags={p.allergens} />
                 {!p.available && <SoldOut />}
               </span>
               {p.available ? (
@@ -155,12 +166,19 @@ export function PlateBuilder() {
                 }
               >
                 {c.label} +{formatMoney(c.price)}
+                <Allergens tags={c.allergens} />
                 {!c.available && <SoldOut />}
               </button>
             );
           })}
         </div>
       </Step>
+
+      <p className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">
+        <strong className="text-foreground">Allergens:</strong> every plate contains wheat. Prepared
+        in a home kitchen that also handles dairy, pork and beef, so we can't guarantee any dish is
+        free from traces. Tell us about an allergy in the order notes.
+      </p>
 
       <div className="flex items-center justify-between gap-3 border-t-2 border-dashed border-border pt-5">
         <div>
@@ -187,6 +205,7 @@ export function ExtrasPicker() {
           <div>
             <p className="font-semibold">
               {e.label}
+              <Allergens tags={e.allergens} />
               {!e.available && <SoldOut />}
             </p>
             <p className="font-mono text-xs text-muted-foreground">{formatMoney(e.price)}</p>

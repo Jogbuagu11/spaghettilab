@@ -42,6 +42,14 @@
 - [x] Push the ready time back with an optional reason; customer emailed
 - [x] /track shows the new time, the original struck through, and an apology
 
+## Phase 9 — capacity, allergens, self-service (done)
+- [x] Delivery capped per hour; pickup uncapped; full hours hidden with a pickup prompt
+- [x] Busy queue stretches the ASAP quote instead of refusing orders
+- [x] One-tap sold-out toggles on the orders screen
+- [x] One-tap reorder from /track
+- [x] Allergen tags per option plus a cross-contamination notice
+- [x] Customer self-cancel with automatic refund, up until delivered
+
 ## Still needs the owner
 - [x] Supabase project linked, migrations applied, admin user seeded
 - [x] spaghettilab.store verified in Resend

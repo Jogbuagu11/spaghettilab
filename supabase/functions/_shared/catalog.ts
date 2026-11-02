@@ -20,6 +20,9 @@ export interface Settings {
   subscription_free_delivery: boolean;
   prep_minutes: number;
   slot_interval_minutes: number;
+  delivery_per_hour_limit: number;
+  queue_minutes_per_order: number;
+  max_prep_minutes: number;
   delivery_radius_miles: number;
   origin_lat: number;
   origin_lng: number;
@@ -65,6 +68,9 @@ export async function loadCatalog(db: SupabaseClient): Promise<Catalog> {
       tax_rate: Number(settings.data.tax_rate),
       delivery_radius_miles: Number(settings.data.delivery_radius_miles),
       free_delivery_min_lead_hours: Number(settings.data.free_delivery_min_lead_hours ?? 12),
+      delivery_per_hour_limit: Number(settings.data.delivery_per_hour_limit ?? 3),
+      queue_minutes_per_order: Number(settings.data.queue_minutes_per_order ?? 3),
+      max_prep_minutes: Number(settings.data.max_prep_minutes ?? 90),
       origin_lat: Number(settings.data.origin_lat),
       origin_lng: Number(settings.data.origin_lng),
     },

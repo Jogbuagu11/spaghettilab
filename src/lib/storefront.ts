@@ -17,6 +17,7 @@ export interface StorefrontSettings {
   deliveryRadiusMiles: number;
   originPostalCode: string;
   slotIntervalMinutes: number;
+  deliveryPerHourLimit: number;
 }
 
 export interface Storefront {
@@ -48,6 +49,7 @@ const DEFAULT_SETTINGS: StorefrontSettings = {
   deliveryRadiusMiles: 5,
   originPostalCode: "95131",
   slotIntervalMinutes: 15,
+  deliveryPerHourLimit: 3,
 };
 
 export const FALLBACK_STOREFRONT: Storefront = {
@@ -59,6 +61,7 @@ export const FALLBACK_STOREFRONT: Storefront = {
 
 interface OptionRow {
   id: string;
+  allergens: string[] | null;
   group_name: MenuGroup;
   label: string;
   description: string | null;
@@ -88,6 +91,9 @@ export const SETTINGS_COLUMNS = [
   "subscription_free_delivery",
   "prep_minutes",
   "slot_interval_minutes",
+  "delivery_per_hour_limit",
+  "queue_minutes_per_order",
+  "max_prep_minutes",
   "delivery_radius_miles",
   "origin_postal_code",
   "contact_email",
@@ -110,6 +116,9 @@ interface SettingsRow {
   subscription_free_delivery: boolean;
   prep_minutes: number;
   slot_interval_minutes: number;
+  delivery_per_hour_limit: number;
+  queue_minutes_per_order: number;
+  max_prep_minutes: number;
   delivery_radius_miles: string | number;
   origin_postal_code: string;
   is_accepting_orders: boolean;
@@ -128,6 +137,7 @@ interface SettingsRow {
 
 const toItem = (row: OptionRow): MenuItem => ({
   id: row.id,
+  allergens: row.allergens ?? [],
   label: row.label,
   description: row.description,
   price: row.price_cents,
@@ -138,7 +148,9 @@ async function fetchStorefront(): Promise<Storefront> {
   const [options, settings, hours] = await Promise.all([
     supabase
       .from("menu_options")
-      .select("id, group_name, label, description, price_cents, sort_order, is_available")
+      .select(
+        "id, group_name, label, description, price_cents, sort_order, is_available, allergens",
+      )
       .order("sort_order"),
     supabase.from("settings").select(SETTINGS_COLUMNS).eq("id", 1).maybeSingle(),
     supabase.from("business_hours").select("*").order("day_of_week"),
@@ -194,6 +206,7 @@ async function fetchStorefront(): Promise<Storefront> {
           deliveryRadiusMiles: Number(s.delivery_radius_miles),
           originPostalCode: s.origin_postal_code,
           slotIntervalMinutes: s.slot_interval_minutes,
+          deliveryPerHourLimit: s.delivery_per_hour_limit,
         }
       : DEFAULT_SETTINGS,
     isLive: true,

@@ -1,11 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, ChefHat, CircleDashed, Clock, MapPin, Package, Truck } from "lucide-react";
 import { useEffect } from "react";
+import { toast } from "sonner";
 import { PageShell } from "@/components/site/Layout";
 import { Button } from "@/components/ui/button";
-import { trackOrder, type TrackedOrder } from "@/lib/api";
+import { cancelOrder, trackOrder, type TrackedOrder } from "@/lib/api";
 import { useCart } from "@/lib/cart";
+import type { CustomId, ExtraId, HeatId, ProteinId, SizeId } from "@/lib/menu";
 import { formatMoney } from "@/lib/menu";
 import { pageMeta } from "@/lib/seo";
 
@@ -81,8 +83,10 @@ function Progress({ order }: { order: TrackedOrder }) {
 }
 
 function TrackPage() {
+  const navigate = useNavigate();
   const { token, new: isNew } = Route.useSearch();
-  const { clear } = useCart();
+  const { clear, addPlate, setExtra, setFulfillment } = useCart();
+  const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["track", token],
@@ -93,6 +97,11 @@ function TrackPage() {
       const status = query.state.data?.order.status;
       return status && ["cancelled", "refunded", "completed"].includes(status) ? false : 30_000;
     },
+  });
+
+  const cancel = useMutation({
+    mutationFn: () => cancelOrder(token),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["track", token] }),
   });
 
   // The order is placed and paid, so the cart has served its purpose.
@@ -286,8 +295,37 @@ function TrackPage() {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <Button asChild variant="lab" size="xl">
-            <Link to="/menu">Order again</Link>
+          {/* Rebuild the exact basket rather than dropping them on an empty
+              menu — repeat orders are most of this business. */}
+          <Button
+            variant="lab"
+            size="xl"
+            onClick={() => {
+              clear();
+              setFulfillment(order.fulfillment);
+              for (const item of order.items) {
+                const c = item.config as Record<string, unknown>;
+                if (c?.["size"]) {
+                  for (let i = 0; i < item.quantity; i++) {
+                    addPlate({
+                      size: c["size"] as SizeId,
+                      heat: c["heat"] as HeatId,
+                      proteins: (c["proteins"] ?? {}) as Partial<Record<ProteinId, number>>,
+                      customs: (c["customizations"] ?? []) as CustomId[],
+                    });
+                  }
+                } else if (c?.["id"]) {
+                  setExtra(c["id"] as ExtraId, item.quantity);
+                }
+              }
+              toast.success("Added to your cart — prices refresh at checkout.");
+              navigate({ to: "/order" });
+            }}
+          >
+            Reorder this
+          </Button>
+          <Button asChild variant="labGhost" size="xl">
+            <Link to="/menu">Change something</Link>
           </Button>
           {order.status === "completed" && (
             <Button asChild variant="labGhost" size="xl">
@@ -297,6 +335,32 @@ function TrackPage() {
             </Button>
           )}
         </div>
+
+        {/* Cancellable right up until it's handed over. */}
+        {!cancelled && order.status !== "completed" && (
+          <div className="mt-8 border-t-2 border-dashed border-border pt-5">
+            {cancel.isError && (
+              <p className="mb-2 text-sm font-semibold text-destructive">
+                {cancel.error instanceof Error
+                  ? cancel.error.message
+                  : "Couldn't cancel — please call us."}
+              </p>
+            )}
+            <button
+              className="text-sm text-muted-foreground underline disabled:opacity-50"
+              disabled={cancel.isPending}
+              onClick={() => {
+                const started = ["preparing", "ready", "out_for_delivery"].includes(order.status);
+                const message = started
+                  ? "We've already started cooking this one. Cancel and refund it anyway?"
+                  : "Cancel this order and refund it in full?";
+                if (window.confirm(message)) cancel.mutate();
+              }}
+            >
+              {cancel.isPending ? "Cancelling…" : "Cancel this order"}
+            </button>
+          </div>
+        )}
       </div>
     </PageShell>
   );
