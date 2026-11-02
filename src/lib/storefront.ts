@@ -18,6 +18,7 @@ export interface StorefrontSettings {
   originPostalCode: string;
   slotIntervalMinutes: number;
   deliveryPerHourLimit: number;
+  lateCancelFeePercent: number;
 }
 
 export interface Storefront {
@@ -50,6 +51,7 @@ const DEFAULT_SETTINGS: StorefrontSettings = {
   originPostalCode: "95131",
   slotIntervalMinutes: 15,
   deliveryPerHourLimit: 3,
+  lateCancelFeePercent: 50,
 };
 
 export const FALLBACK_STOREFRONT: Storefront = {
@@ -94,6 +96,7 @@ export const SETTINGS_COLUMNS = [
   "delivery_per_hour_limit",
   "queue_minutes_per_order",
   "max_prep_minutes",
+  "late_cancel_fee_percent",
   "delivery_radius_miles",
   "origin_postal_code",
   "contact_email",
@@ -119,6 +122,7 @@ interface SettingsRow {
   delivery_per_hour_limit: number;
   queue_minutes_per_order: number;
   max_prep_minutes: number;
+  late_cancel_fee_percent: number;
   delivery_radius_miles: string | number;
   origin_postal_code: string;
   is_accepting_orders: boolean;
@@ -207,6 +211,7 @@ async function fetchStorefront(): Promise<Storefront> {
           originPostalCode: s.origin_postal_code,
           slotIntervalMinutes: s.slot_interval_minutes,
           deliveryPerHourLimit: s.delivery_per_hour_limit,
+          lateCancelFeePercent: s.late_cancel_fee_percent,
         }
       : DEFAULT_SETTINGS,
     isLive: true,

@@ -49,6 +49,7 @@ function catalog(overrides: Partial<Catalog["settings"]> = {}, soldOut: string[]
       delivery_per_hour_limit: 3,
       queue_minutes_per_order: 3,
       max_prep_minutes: 90,
+      late_cancel_fee_percent: 50,
       delivery_radius_miles: 5,
       origin_lat: 37.3858,
       origin_lng: -121.8615,

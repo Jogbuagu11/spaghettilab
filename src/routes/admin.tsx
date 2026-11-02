@@ -947,6 +947,12 @@ const SETTING_FIELDS: {
     type: "number",
   },
   { key: "max_prep_minutes", label: "Longest ASAP quote (minutes)", type: "number" },
+  {
+    key: "late_cancel_fee_percent",
+    label: "Late cancellation fee (% of food)",
+    hint: "Kept when a customer cancels food already cooking. Delivery and tip are always refunded. 0 makes it free.",
+    type: "number",
+  },
   { key: "instagram_url", label: "Instagram URL" },
   { key: "tiktok_url", label: "TikTok URL" },
   { key: "facebook_url", label: "Facebook URL" },

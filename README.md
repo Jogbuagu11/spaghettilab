@@ -350,6 +350,26 @@ cross-contamination notice sits under the plate builder, since a MEHKO can't gua
 
 Editing them is a DB field today — worth surfacing in `/admin` if the menu grows.
 
+## Cancellation policy
+
+| Order state | Customer can cancel | Refund |
+| --- | --- | --- |
+| `pending_payment` / `paid` | yes | in full |
+| `preparing` / `ready` | yes | less a fee — the food exists |
+| `out_for_delivery` | no | — |
+| `completed` | no | — |
+
+The fee is `late_cancel_fee_percent` (default 50) of the **food subtotal only**. Delivery and tip
+are returned whole, because neither service was rendered — billing for a trip that never happened
+is the kind of thing that loses a chargeback.
+
+The amount is stated on `/track` *before* the customer confirms, repeated in the confirmation
+dialog and itemised in the cancellation email. The kitchen gets its own alert when a cancellation
+lands on food already cooking.
+
+An admin cancelling from `/admin` still refunds in full — that's the kitchen's decision, not the
+customer's, so it shouldn't carry a customer penalty.
+
 ## Proof of delivery
 
 Marking a delivery **Delivered** in the admin opens the phone camera. The photo is optional —

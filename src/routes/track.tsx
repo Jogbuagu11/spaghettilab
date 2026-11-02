@@ -7,6 +7,7 @@ import { PageShell } from "@/components/site/Layout";
 import { Button } from "@/components/ui/button";
 import { cancelOrder, trackOrder, type TrackedOrder } from "@/lib/api";
 import { useCart } from "@/lib/cart";
+import { useStorefront } from "@/lib/storefront";
 import type { CustomId, ExtraId, HeatId, ProteinId, SizeId } from "@/lib/menu";
 import { formatMoney } from "@/lib/menu";
 import { pageMeta } from "@/lib/seo";
@@ -87,6 +88,7 @@ function TrackPage() {
   const { token, new: isNew } = Route.useSearch();
   const { clear, addPlate, setExtra, setFulfillment } = useCart();
   const qc = useQueryClient();
+  const { settings } = useStorefront();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["track", token],
@@ -101,7 +103,14 @@ function TrackPage() {
 
   const cancel = useMutation({
     mutationFn: () => cancelOrder(token),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["track", token] }),
+    onSuccess: (r) => {
+      toast.success(
+        r.feeCents > 0
+          ? `Cancelled. ${formatMoney(r.refundCents)} refunded; ${formatMoney(r.feeCents)} kept for food already made.`
+          : `Cancelled and refunded in full.`,
+      );
+      qc.invalidateQueries({ queryKey: ["track", token] });
+    },
   });
 
   // The order is placed and paid, so the cart has served its purpose.
@@ -336,8 +345,16 @@ function TrackPage() {
           )}
         </div>
 
-        {/* Cancellable right up until it's handed over. */}
-        {!cancelled && order.status !== "completed" && (
+        {!cancelled && order.status === "out_for_delivery" && (
+          <p className="mt-8 border-t-2 border-dashed border-border pt-5 text-sm text-muted-foreground">
+            This order is on its way, so it can no longer be cancelled online.
+            {data.contactPhone ? ` Call ${data.contactPhone} if something's wrong.` : ""}
+          </p>
+        )}
+
+        {/* Cancellable until it leaves the kitchen. Once it's out for
+            delivery there's nothing left to call back. */}
+        {!cancelled && ["pending_payment", "paid", "preparing", "ready"].includes(order.status) && (
           <div className="mt-8 border-t-2 border-dashed border-border pt-5">
             {cancel.isError && (
               <p className="mb-2 text-sm font-semibold text-destructive">
@@ -346,14 +363,29 @@ function TrackPage() {
                   : "Couldn't cancel — please call us."}
               </p>
             )}
+            {/* State the cost before they click, not after. */}
+            {["preparing", "ready"].includes(order.status) && (
+              <p className="mb-2 text-sm text-muted-foreground">
+                We've already started cooking this one, so cancelling now keeps{" "}
+                <strong className="text-foreground">
+                  {formatMoney(
+                    Math.round((order.subtotal_cents * settings.lateCancelFeePercent) / 100),
+                  )}
+                </strong>{" "}
+                towards the food. Delivery and any tip come back in full.
+              </p>
+            )}
             <button
               className="text-sm text-muted-foreground underline disabled:opacity-50"
               disabled={cancel.isPending}
               onClick={() => {
-                const started = ["preparing", "ready", "out_for_delivery"].includes(order.status);
-                const message = started
-                  ? "We've already started cooking this one. Cancel and refund it anyway?"
-                  : "Cancel this order and refund it in full?";
+                const fee = ["preparing", "ready"].includes(order.status)
+                  ? Math.round((order.subtotal_cents * settings.lateCancelFeePercent) / 100)
+                  : 0;
+                const message =
+                  fee > 0
+                    ? `Cancel this order? ${formatMoney(order.total_cents - fee)} will be refunded; ${formatMoney(fee)} is kept for food already made.`
+                    : "Cancel this order and refund it in full?";
                 if (window.confirm(message)) cancel.mutate();
               }}
             >

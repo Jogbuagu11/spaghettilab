@@ -342,10 +342,16 @@ export const hourKey = (iso: string) => {
 
 // ------------------------------------------------------- customer cancel ----
 
-export function cancelOrder(
-  token: string,
-  reason?: string,
-): Promise<{ ok: true; status: string; refunded: boolean; late_cancel?: boolean }> {
+export interface CancelResult {
+  ok: true;
+  status: string;
+  refunded: boolean;
+  feeCents: number;
+  refundCents: number;
+  lateCancel: boolean;
+}
+
+export function cancelOrder(token: string, reason?: string): Promise<CancelResult> {
   return callFunction("cancel-order", {
     method: "POST",
     body: JSON.stringify({ token, reason }),

@@ -303,7 +303,10 @@ export function orderCancelled(
   order: EmailOrder,
   reason: string | null,
   refunded: boolean,
+  /** Retained because the food was already made. 0 for an early cancellation. */
+  feeCents = 0,
 ): RenderedEmail {
+  const refundCents = Math.max(0, order.total_cents - feeCents);
   return {
     subject: `Order ${order.order_number} was cancelled — Spaghetti Lab`,
     html: renderEmail({
@@ -313,12 +316,16 @@ export function orderCancelled(
       eyebrow: `Order ${order.order_number}`,
       heading: "We had to cancel your order.",
       body: `
-        ${paragraph(`Sorry, ${firstName(order.customer_name)} — we couldn't complete this one.`)}
-        ${reason ? card(`${label("Reason")}<p style="margin:0;font-family:${SANS};font-size:15px;color:${BRAND.ink};">${escapeHtml(reason)}</p>`) : ""}
         ${paragraph(
-          refunded
-            ? `We've refunded <strong>${money(order.total_cents)}</strong> to your card. Depending on your bank it can take 5–10 business days to appear.`
-            : "No charge was taken for this order.",
+          !refunded
+            ? "No charge was taken for this order."
+            : feeCents > 0
+              ? `We've refunded <strong>${money(refundCents)}</strong> to your card. Because this ` +
+                `order was already being cooked, we kept ${money(feeCents)} towards the food — ` +
+                `delivery and any tip came back in full. Refunds take 5–10 business days to ` +
+                `appear, depending on your bank.`
+              : `We've refunded <strong>${money(refundCents)}</strong> to your card. Depending on ` +
+                `your bank it can take 5–10 business days to appear.`,
         )}`,
       cta: { label: "Start a new order", url: `${SITE_URL}/menu` },
     }),

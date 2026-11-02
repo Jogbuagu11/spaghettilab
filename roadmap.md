@@ -48,7 +48,7 @@
 - [x] One-tap sold-out toggles on the orders screen
 - [x] One-tap reorder from /track
 - [x] Allergen tags per option plus a cross-contamination notice
-- [x] Customer self-cancel with automatic refund, up until delivered
+- [x] Tiered cancellation: full refund before cooking, fee once cooking, refused once out for delivery
 
 ## Still needs the owner
 - [x] Supabase project linked, migrations applied, admin user seeded

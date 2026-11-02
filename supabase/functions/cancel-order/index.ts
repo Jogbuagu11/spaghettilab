@@ -1,10 +1,14 @@
 /**
  * Customer-initiated cancellation, authorised by the order's track token.
  *
- * Allowed right up until the order is marked delivered/completed, which is
- * what the owner asked for. Note that cancelling a cooked or out-for-delivery
- * order still refunds in full — see the `late_cancel` flag on the response if
- * you ever want to make that a judgement call instead of automatic.
+ *   pending_payment / paid  cancel, refunded in full
+ *   preparing / ready       cancel, minus a fee — the food already exists
+ *   out_for_delivery        refused, it's in the car
+ *   completed               refused
+ *
+ * The fee is a share of the food subtotal only. Delivery and tip come back in
+ * full, because neither was rendered; billing for a trip that never happened
+ * is the kind of thing that loses a chargeback.
  */
 import { loadCatalog } from "../_shared/catalog.ts";
 import { serviceClient } from "../_shared/db.ts";
@@ -17,10 +21,19 @@ import { optionalString } from "../_shared/validate.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Everything before the food has actually changed hands. */
-const CANCELLABLE = new Set(["pending_payment", "paid", "preparing", "ready", "out_for_delivery"]);
-/** Past this point the kitchen has already spent money on it. */
-const ALREADY_COOKING = new Set(["preparing", "ready", "out_for_delivery"]);
+const CANCELLABLE = new Set(["pending_payment", "paid", "preparing", "ready"]);
+/** Cancellable, but the food is already made. */
+const CHARGEABLE = new Set(["preparing", "ready"]);
+
+/** Why a cancellation was refused, in words a customer can act on. */
+const REFUSAL: Record<string, string> = {
+  out_for_delivery:
+    "This order is already on its way, so it can't be cancelled now. " +
+    "Please call us if something's wrong.",
+  completed:
+    "This order has already been completed, so it can't be cancelled. " +
+    "Get in touch if something was wrong with it.",
+};
 
 Deno.serve(async (req) => {
   const pre = preflight(req);
@@ -52,22 +65,21 @@ Deno.serve(async (req) => {
       return json(req, { ok: true, status: order.status, refunded: false, alreadyCancelled: true });
     }
     if (!CANCELLABLE.has(order.status)) {
-      throw new PublicError(
-        "This order has already been completed, so it can't be cancelled. " +
-          "Get in touch if something was wrong with it.",
-        409,
-      );
+      throw new PublicError(REFUSAL[order.status] ?? "This order can no longer be cancelled.", 409);
     }
+
+    const catalog = await loadCatalog(db);
+    // Charged on the food only: delivery and tip are returned whole.
+    const feeCents = CHARGEABLE.has(order.status)
+      ? Math.round((order.subtotal_cents * catalog.settings.late_cancel_fee_percent) / 100)
+      : 0;
+    const refundCents = Math.max(0, order.total_cents - feeCents);
 
     // Refund before recording the cancellation, so a Square failure leaves the
     // order untouched rather than claiming a refund that never happened.
     let refunded = false;
-    if (order.square_payment_id && order.paid_at) {
-      await refundPayment(
-        order.square_payment_id,
-        order.total_cents,
-        reason ?? "Cancelled by customer",
-      );
+    if (order.square_payment_id && order.paid_at && refundCents > 0) {
+      await refundPayment(order.square_payment_id, refundCents, reason ?? "Cancelled by customer");
       refunded = true;
     }
 
@@ -76,6 +88,7 @@ Deno.serve(async (req) => {
       .update({
         status: refunded ? "refunded" : "cancelled",
         cancellation_reason: reason ?? "Cancelled by customer",
+        cancellation_fee_cents: feeCents,
       })
       .eq("id", order.id)
       .in("status", [...CANCELLABLE])
@@ -84,7 +97,6 @@ Deno.serve(async (req) => {
 
     if (error || !updated) throw error ?? new Error("cancel update failed");
 
-    const catalog = await loadCatalog(db);
     const emailOrder: EmailOrder = {
       ...updated,
       items: [...(order.order_items ?? [])].sort(
@@ -96,13 +108,13 @@ Deno.serve(async (req) => {
     await Promise.allSettled([
       sendEmail(db, {
         to: updated.customer_email,
-        email: orderCancelled(emailOrder, reason, refunded),
+        email: orderCancelled(emailOrder, reason, refunded, feeCents),
         template: "order_cancelled",
         orderId: order.id,
         once: true,
       }),
       // The kitchen needs to know immediately if it was already cooking.
-      kitchen && ALREADY_COOKING.has(order.status)
+      kitchen && CHARGEABLE.has(order.status)
         ? sendEmail(db, {
             to: kitchen,
             email: {
@@ -120,9 +132,9 @@ Deno.serve(async (req) => {
       ok: true,
       status: updated.status,
       refunded,
-      // True when the kitchen had already started: useful if you later decide
-      // late cancellations shouldn't be a full automatic refund.
-      late_cancel: ALREADY_COOKING.has(order.status),
+      feeCents,
+      refundCents,
+      lateCancel: CHARGEABLE.has(order.status),
     });
   } catch (error) {
     return fail(req, error);
