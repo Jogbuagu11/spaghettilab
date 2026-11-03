@@ -47,7 +47,10 @@ function SoldOut() {
 function Allergens({ tags }: { tags: string[] }) {
   if (tags.length === 0) return null;
   return (
-    <span className="ml-1 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+    // Inherits the parent's colour instead of pinning a muted grey: on a
+    // selected chip the background flips to tomato red, and an allergen tag
+    // is the last thing that should become unreadable there.
+    <span className="ml-1 text-[10px] font-normal uppercase tracking-wide opacity-70">
       {tags.join(" · ")}
     </span>
   );
