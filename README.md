@@ -349,7 +349,28 @@ Tags live per menu option (`menu_options.allergens`), so a plate's warning is as
 exactly what the customer chose rather than listing everything the kitchen touches. A standing
 cross-contamination notice sits under the plate builder, since a MEHKO can't guarantee separation.
 
-Editing them is a DB field today — worth surfacing in `/admin` if the menu grows.
+Editing them is a DB field today — worth surfacing in `/admin` if the menu grows. The same
+goes for `menu_options.kind`: set it when inserting a new extra, or checkout won't suggest it.
+
+## Checkout confirmation
+
+The Pay button opens a confirmation dialog rather than charging straight away. It restates the
+order, the fulfilment method and the promised time, and — while the customer is still there —
+offers the two things most often left off: parmesan on the plates, and a drink.
+
+Each nudge only appears when the basket is actually missing it, and every suggestion re-prices
+the order live. Which rows count as parmesan or a drink comes from `menu_options.kind`
+(`cheese` / `drink` / `side`), not from a list of ids in the client, so a new soda only needs
+the column set to become offerable. A row with no `kind` is simply never suggested.
+
+Two details the dialog has to respect:
+
+- **Wallets bake in the amount.** Apple Pay and Google Pay instances are built for a specific
+  total, so accepting an upsell rebuilds them; the confirm button waits ("Updating…") rather
+  than charging against a sheet still showing the old number.
+- **Toasts can't be used behind it.** Radix blocks pointer events outside the dialog, so the
+  free-delivery nudge would be unclickable and would dismiss the dialog on contact. The dialog
+  carries its own copy of that nudge, and the toast is suppressed while it's open.
 
 ## Cancellation policy
 

@@ -2,6 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { priceOrder, type Catalog, type DeliveryTiming, type MenuOption } from "./catalog.ts";
 import { PublicError } from "./http.ts";
 
+let nextSort = 0;
 const option = (
   id: string,
   group: MenuOption["group_name"],
@@ -12,16 +13,22 @@ const option = (
   group_name: group,
   label: id,
   price_cents: price,
+  // Only the order within the base group matters (it picks the default);
+  // a running counter preserves declaration order for every group.
+  sort_order: nextSort++,
   is_available: available,
 });
 
 function catalog(overrides: Partial<Catalog["settings"]> = {}, soldOut: string[] = []): Catalog {
+  nextSort = 0;
   const options = [
     option("small", "size", 1200),
     option("medium", "size", 1800),
     option("large", "size", 2600),
     option("spicy", "heat", 0),
     option("mild", "heat", 0),
+    option("minced-pork", "base", 0),
+    option("no-meat", "base", 0),
     option("meatball", "protein", 400),
     option("sausage", "protein", 400),
     option("mushroom", "customization", 100),
@@ -330,6 +337,8 @@ Deno.test("a plate breaks down into a base variation plus priced modifiers", () 
   assertEquals(sq.basePriceCents, 2600);
   assertEquals(sq.modifiers, [
     { name: "spicy", priceCents: 0, quantity: 1 },
+    // Free, but still itemised — the receipt has to say what's in the plate.
+    { name: "minced-pork", priceCents: 0, quantity: 1 },
     { name: "meatball", priceCents: 400, quantity: 2 },
     { name: "mushroom", priceCents: 100, quantity: 1 },
   ]);
@@ -368,4 +377,45 @@ Deno.test("tax rounds half to even, matching Square", () => {
     const priced = priceOrder(catalog(), { plates: [plate({ size })], fulfillment: "pickup" });
     assertEquals(priced.tax_cents, expected, `${size} plate`);
   }
+});
+
+// --- base meat ------------------------------------------------------------
+
+Deno.test("the meat in the sauce is free either way", () => {
+  const pork = priceOrder(catalog(), {
+    plates: [plate({ base: "minced-pork" })],
+    fulfillment: "pickup",
+  });
+  const none = priceOrder(catalog(), {
+    plates: [plate({ base: "no-meat" })],
+    fulfillment: "pickup",
+  });
+  assertEquals(pork.subtotal_cents, none.subtotal_cents);
+  assertEquals(pork.subtotal_cents, 1800);
+});
+
+// A cart saved before the choice existed carries no base at all.
+Deno.test("a plate with no base falls back to the first base option", () => {
+  const priced = priceOrder(catalog(), { plates: [plate({})], fulfillment: "pickup" });
+  assertEquals(priced.lines[0]!.config.base, "minced-pork");
+  assertEquals(priced.subtotal_cents, 1800);
+});
+
+// Minced pork used to be a $4 protein; it must not be chargeable as one now.
+Deno.test("the base cannot be ordered as a paid protein", () => {
+  assertThrows(
+    () =>
+      priceOrder(catalog(), {
+        plates: [plate({ proteins: { "minced-pork": 3 } })],
+        fulfillment: "pickup",
+      }),
+    PublicError,
+  );
+});
+
+Deno.test("an unknown base is rejected", () => {
+  assertThrows(
+    () => priceOrder(catalog(), { plates: [plate({ base: "wagyu" })], fulfillment: "pickup" }),
+    PublicError,
+  );
 });

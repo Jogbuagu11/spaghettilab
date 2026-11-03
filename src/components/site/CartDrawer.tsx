@@ -3,7 +3,7 @@ import { Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/cart";
-import { STATIC_MENU, formatMoney, type MenuData } from "@/lib/menu";
+import { DEFAULT_BASE, STATIC_MENU, formatMoney, type MenuData } from "@/lib/menu";
 import { orderTotals, platePrice, type Plate } from "@/lib/pricing";
 import { useStorefront } from "@/lib/storefront";
 
@@ -11,6 +11,10 @@ export function describePlate(p: Plate, menu: MenuData = STATIC_MENU) {
   const parts: string[] = [];
   const heat = menu.heat.find((h) => h.id === p.heat);
   if (heat) parts.push(heat.label);
+  // Free, but it still has to be named — "No meat" is the whole point of
+  // choosing it, and pork is the kind of thing a customer checks for.
+  const base = menu.bases.find((b) => b.id === (p.base ?? DEFAULT_BASE));
+  if (base) parts.push(base.label);
   menu.proteins.forEach((pr) => {
     const n = p.proteins[pr.id as keyof typeof p.proteins] ?? 0;
     if (n) parts.push(`${n}× ${pr.label}`);
@@ -19,10 +23,26 @@ export function describePlate(p: Plate, menu: MenuData = STATIC_MENU) {
   return parts.join(" · ");
 }
 
-export function CartLines({ compact = false }: { compact?: boolean }) {
+export function CartLines({
+  compact = false,
+  totals,
+  tip,
+  totalLabel = "Total",
+}: {
+  compact?: boolean;
+  /**
+   * Pre-computed totals from a caller that knows the chosen time. Free
+   * delivery depends on it, so checkout must pass its own — without this the
+   * drawer's ASAP assumption would print a delivery fee the order isn't paying.
+   */
+  totals?: ReturnType<typeof orderTotals>;
+  /** Folds the tip into the one Total, rather than leaving two on screen. */
+  tip?: { percent: number; cents: number };
+  totalLabel?: string;
+}) {
   const { plates, extras, removePlate, fulfillment } = useCart();
   const { menu } = useStorefront();
-  const t = orderTotals(plates, extras, fulfillment, menu.taxRate, menu);
+  const t = totals ?? orderTotals(plates, extras, fulfillment, menu.taxRate, menu);
   return (
     <div className="space-y-3">
       {plates.map((p, i) => (
@@ -66,7 +86,8 @@ export function CartLines({ compact = false }: { compact?: boolean }) {
           <Row k="Delivery" v={t.delivery ? formatMoney(t.delivery) : "FREE"} />
         )}
         <Row k="Est. tax" v={formatMoney(t.tax)} />
-        <Row k="Total" v={formatMoney(t.total)} bold />
+        {tip && tip.cents > 0 && <Row k={`Tip (${tip.percent}%)`} v={formatMoney(tip.cents)} />}
+        <Row k={totalLabel} v={formatMoney(t.total + (tip?.cents ?? 0))} bold />
       </div>
       {t.untilFree > 0 && (
         <p className="rounded-xl bg-accent p-3 text-sm font-semibold text-accent-foreground">

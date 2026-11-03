@@ -12,6 +12,7 @@ const plate = (o: Partial<Plate> = {}): Plate => ({
   id: "1",
   size: "small",
   heat: "mild",
+  base: "minced-pork",
   proteins: {},
   customs: [],
   ...o,
@@ -31,6 +32,19 @@ describe("pricing", () => {
     expect(
       platePrice(plate({ proteins: { meatball: 2, sausage: 1 }, customs: ["mushroom"] })),
     ).toBe(1200 + 1200 + 100);
+  });
+
+  // Minced pork is what the plate comes with, not a $4 add-on, and skipping
+  // it isn't a discount either.
+  it("charges nothing for the meat that comes in the sauce", () => {
+    expect(platePrice(plate({ base: "minced-pork" }))).toBe(1200);
+    expect(platePrice(plate({ base: "no-meat" }))).toBe(1200);
+  });
+
+  // Carts saved before the choice existed carry no base at all.
+  it("prices a plate with no base recorded as the default", () => {
+    const legacy = { id: "x", size: "medium", heat: "mild", proteins: {}, customs: [] } as Plate;
+    expect(platePrice(legacy)).toBe(1800);
   });
 
   it("never charges delivery for pickup", () => {

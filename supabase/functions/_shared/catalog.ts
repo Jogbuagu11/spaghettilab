@@ -4,9 +4,10 @@ import { leadHours } from "./schedule.ts";
 
 export interface MenuOption {
   id: string;
-  group_name: "size" | "heat" | "protein" | "customization" | "extra";
+  group_name: "size" | "heat" | "base" | "protein" | "customization" | "extra";
   label: string;
   price_cents: number;
+  sort_order: number;
   is_available: boolean;
 }
 
@@ -52,7 +53,7 @@ export interface Catalog {
 
 export async function loadCatalog(db: SupabaseClient): Promise<Catalog> {
   const [options, settings, hours] = await Promise.all([
-    db.from("menu_options").select("id, group_name, label, price_cents, is_available"),
+    db.from("menu_options").select("id, group_name, label, price_cents, sort_order, is_available"),
     db.from("settings").select("*").eq("id", 1).single(),
     db.from("business_hours").select("*").order("day_of_week"),
   ]);
@@ -85,6 +86,12 @@ export async function loadCatalog(db: SupabaseClient): Promise<Catalog> {
 export interface PlateInput {
   size: string;
   heat: string;
+  /**
+   * What comes in the plate, free. Optional: carts built before this choice
+   * existed don't carry one, and they predate any intent to skip the pork,
+   * so they get the default the plate was always served with.
+   */
+  base?: string;
   proteins?: Record<string, number>;
   customizations?: string[];
 }
@@ -202,6 +209,20 @@ export function roundCents(value: number): number {
 const MAX_PLATES = 20;
 const MAX_QTY = 20;
 
+/**
+ * The base a plate comes with when none was chosen. Lowest sort_order wins, so
+ * the kitchen can change the default from the admin without a deploy.
+ */
+function defaultBase(catalog: Catalog): string {
+  let best: MenuOption | undefined;
+  for (const o of catalog.options.values()) {
+    if (o.group_name !== "base" || !o.is_available) continue;
+    if (!best || o.sort_order < best.sort_order) best = o;
+  }
+  if (!best) throw new PublicError("The menu is misconfigured — please call us to order.");
+  return best.id;
+}
+
 /** Looks an option up, rejecting unknown ids and anything marked sold out. */
 function option(catalog: Catalog, id: unknown, group: MenuOption["group_name"]): MenuOption {
   if (typeof id !== "string") throw new PublicError(`Invalid ${group} selection.`);
@@ -242,11 +263,15 @@ export function priceOrder(
   for (const plate of cart.plates) {
     const size = option(catalog, plate.size, "size");
     const heat = option(catalog, plate.heat, "heat");
+    // Single choice and free today, but priced from its row like everything
+    // else — the client never gets to say what anything costs.
+    const base = option(catalog, plate.base ?? defaultBase(catalog), "base");
 
-    let price = size.price_cents + heat.price_cents;
-    const parts: string[] = [heat.label];
+    let price = size.price_cents + heat.price_cents + base.price_cents;
+    const parts: string[] = [heat.label, base.label];
     const modifiers: SquareLineBreakdown["modifiers"] = [
       { name: heat.label, priceCents: heat.price_cents, quantity: 1 },
+      { name: base.label, priceCents: base.price_cents, quantity: 1 },
     ];
 
     const proteins: Record<string, number> = {};
@@ -279,6 +304,7 @@ export function priceOrder(
       config: {
         size: size.id,
         heat: heat.id,
+        base: base.id,
         proteins,
         customizations,
         summary: parts.join(" · "),

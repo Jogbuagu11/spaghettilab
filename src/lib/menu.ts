@@ -12,16 +12,23 @@ export const HEAT = [
 ] as const;
 export type HeatId = (typeof HEAT)[number]["id"];
 
+/** What's in the plate before any add-on. Single choice, no charge. */
+export const BASES = [
+  { id: "minced-pork", label: "Minced Pork" },
+  { id: "no-meat", label: "No meat" },
+] as const;
+export type BaseId = (typeof BASES)[number]["id"];
+export const DEFAULT_BASE: BaseId = "minced-pork";
+
 export const PROTEINS = [
   { id: "meatball", label: "Meatball", price: 400 },
   { id: "sausage", label: "Sausage", price: 400 },
-  { id: "minced-pork", label: "Minced Pork", price: 400 },
 ] as const;
 export type ProteinId = (typeof PROTEINS)[number]["id"];
 
 export const CUSTOMIZATIONS = [
   { id: "mushroom", label: "Mushroom", price: 100 },
-  { id: "extra-cheese", label: "Extra Cheese", price: 100 },
+  { id: "extra-cheese", label: "Extra Cheese", price: 100, kind: "cheese" },
 ] as const;
 export type CustomId = (typeof CUSTOMIZATIONS)[number]["id"];
 
@@ -59,11 +66,18 @@ export interface MenuItem {
   available: boolean;
   /** Lowercase tags, e.g. ["wheat", "dairy"]. Empty when none apply. */
   allergens: string[];
+  /** What the item actually is, where that matters for the upsell. */
+  kind?: MenuItemKind;
 }
+
+/** What an option is, so checkout can tell a Coke from a slice of bread. */
+export type MenuItemKind = "drink" | "side" | "cheese";
 
 export interface MenuData {
   sizes: MenuItem[];
   heat: MenuItem[];
+  /** Single-select, free: minced pork (the default) or nothing. */
+  bases: MenuItem[];
   proteins: MenuItem[];
   customizations: MenuItem[];
   extras: MenuItem[];
@@ -79,18 +93,26 @@ export interface MenuData {
   closedMessage: string;
 }
 
-const toItems = (xs: ReadonlyArray<{ id: string; label: string; price?: number }>): MenuItem[] =>
+const KINDS = ["drink", "side", "cheese"] as const;
+const isKind = (v: unknown): v is MenuItemKind =>
+  typeof v === "string" && (KINDS as readonly string[]).includes(v);
+
+const toItems = (
+  xs: ReadonlyArray<{ id: string; label: string; price?: number; kind?: string }>,
+): MenuItem[] =>
   xs.map((x) => ({
     id: x.id,
     label: x.label,
     price: x.price ?? 0,
     available: true,
     allergens: [],
+    ...(isKind(x.kind) ? { kind: x.kind } : {}),
   }));
 
 export const STATIC_MENU: MenuData = {
   sizes: toItems(SIZES),
   heat: toItems(HEAT),
+  bases: toItems(BASES),
   proteins: toItems(PROTEINS),
   customizations: toItems(CUSTOMIZATIONS),
   extras: toItems(EXTRAS),

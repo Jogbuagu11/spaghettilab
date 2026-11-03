@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CartLines } from "@/components/site/CartDrawer";
+import { ConfirmOrderDialog } from "@/components/site/ConfirmOrderDialog";
 import { PageShell } from "@/components/site/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, createSubscription, deliveryLoad, hourKey, placeOrder } from "@/lib/api";
 import { useCart } from "@/lib/cart";
-import { formatMoney } from "@/lib/menu";
+import { formatMoney, type CustomId, type ExtraId } from "@/lib/menu";
 import { leadHours, orderTotals } from "@/lib/pricing";
 import { canOrderAsapWithHours, formatMinutes, slotsForHours } from "@/lib/schedule";
 import { pageMeta } from "@/lib/seo";
@@ -48,7 +49,8 @@ type OrderType = "once" | "weekly";
 
 function OrderPage() {
   const navigate = useNavigate();
-  const { plates, extras, fulfillment, setFulfillment, clear } = useCart();
+  const { plates, extras, fulfillment, setFulfillment, clear, addCustomToPlates, setExtra } =
+    useCart();
   const { menu, hours, settings } = useStorefront();
 
   // Rendered on the client only — the server has no "now".
@@ -119,6 +121,17 @@ function OrderPage() {
   const tipCents = Math.round(totals.subtotal * (tipPercent / 100));
   const grandTotal = totals.total + tipCents;
 
+  // Plain-language "when" for the confirmation dialog. Reads from allSlots
+  // rather than the capacity-filtered list so a slot that fills up while the
+  // dialog is open still shows its label instead of going blank.
+  const whenLabel = useMemo(() => {
+    if (orderType === "weekly") {
+      return `Every ${DAY_NAMES[weeklyDay]}, ${formatMinutes(weeklyMinute)}`;
+    }
+    if (when === "asap") return `ASAP — ready in about ${menu.prepMinutes} minutes`;
+    return allSlots.find((slot) => slot.iso === when)?.label ?? "";
+  }, [orderType, weeklyDay, weeklyMinute, when, allSlots, menu.prepMinutes]);
+
   // Times a weekly order can be set for: the widest window across open days.
   const weeklyTimeOptions = useMemo(() => {
     const open = hours.filter((h) => !h.is_closed);
@@ -138,6 +151,13 @@ function OrderPage() {
     [slots, now, menu.freeDeliveryMinLeadHours],
   );
 
+  // Which button the customer pressed, remembered across the confirmation
+  // dialog. The *kind*, not the instance: adding an upsell rebuilds the wallet
+  // instances, so the live one is looked up again at the moment of charging.
+  type MethodKind = "card" | "apple" | "google";
+  const [pendingMethod, setPendingMethod] = useState<MethodKind | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   // Tell the customer the moment lead time becomes the only thing standing
   // between them and free delivery — that's when it's actionable. Keyed on the
   // chosen slot so the minute-ticking clock can't make it fire repeatedly.
@@ -149,6 +169,10 @@ function OrderPage() {
       freeDeliveryToastRef.current = "";
       return;
     }
+    // The confirmation dialog blocks pointer events behind it, so a toast
+    // there would be unclickable and would dismiss the dialog on contact.
+    // It carries its own copy of this nudge instead.
+    if (confirmOpen) return;
     // Only when the basket already qualifies and timing is the sole blocker;
     // if the order is also under the spend threshold, hours aren't the point.
     if (reason !== "needs_lead_time") return;
@@ -179,20 +203,29 @@ function OrderPage() {
     menu.freeDeliveryMinLeadHours,
     menu.deliveryFee,
     firstFreeSlot,
+    confirmOpen,
   ]);
 
   // ------------------------------------------------------------ Square ----
-  const cardRef = useRef<HTMLDivElement>(null);
+  // A node in state, not a ref: on a cold load of /order the cart is still
+  // empty for one render and this component returns the "add a plate" branch,
+  // so the card container doesn't exist yet. A `[]` effect would check the ref
+  // then, find nothing and never run again — leaving checkout with no payment
+  // form for anyone who opened the page directly instead of via the drawer.
+  const [cardNode, setCardNode] = useState<HTMLDivElement | null>(null);
   const paymentsRef = useRef<SquarePayments | null>(null);
   const cardInstanceRef = useRef<SquarePaymentMethod | null>(null);
   const [cardReady, setCardReady] = useState(false);
+  // Separate from cardReady: the wallets only need the Payments object, so a
+  // card form that fails to attach shouldn't take Apple Pay down with it.
+  const [paymentsReady, setPaymentsReady] = useState(false);
   const [applePay, setApplePay] = useState<SquarePaymentMethod | null>(null);
   const [googlePay, setGooglePay] = useState<SquarePaymentMethod | null>(null);
   const [squareError, setSquareError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!isSquareConfigured || !cardRef.current) return;
+    if (!isSquareConfigured || !cardNode) return;
     let cancelled = false;
     let card: SquarePaymentMethod | undefined;
 
@@ -201,11 +234,11 @@ function OrderPage() {
         const payments = await createPayments();
         if (cancelled) return;
         paymentsRef.current = payments;
+        setPaymentsReady(true);
 
         card = await payments.card({ style: { input: { fontSize: "16px" } } });
-        // The ref can go null if the component unmounted mid-await.
-        if (cancelled || !cardRef.current) return;
-        await card.attach(cardRef.current);
+        if (cancelled) return;
+        await card.attach(cardNode);
         if (cancelled) return;
 
         cardInstanceRef.current = card;
@@ -224,14 +257,22 @@ function OrderPage() {
       cancelled = true;
       card?.destroy?.();
       cardInstanceRef.current = null;
+      setCardReady(false);
     };
-  }, []);
+  }, [cardNode]);
 
   // Digital wallets embed the amount, so they're rebuilt whenever it changes.
+  // walletAmount records which total the live instances were built for: adding
+  // parmesan from the confirmation dialog moves the total, and charging
+  // against a sheet still showing the old one would bill a different number
+  // than the customer approved.
+  const [walletAmount, setWalletAmount] = useState<number | null>(null);
+
   useEffect(() => {
     const payments = paymentsRef.current;
     if (!payments || grandTotal <= 0) return;
     let cancelled = false;
+    setWalletAmount(null);
 
     (async () => {
       const request = buildPaymentRequest(payments, grandTotal);
@@ -244,12 +285,13 @@ function OrderPage() {
       if (cancelled) return;
       setApplePay(apple.status === "fulfilled" ? apple.value : null);
       setGooglePay(google.status === "fulfilled" ? google.value : null);
+      setWalletAmount(grandTotal);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [grandTotal]);
+  }, [grandTotal, paymentsReady]);
 
   // ------------------------------------------------------------ submit ----
   const validate = useCallback((): string | null => {
@@ -263,14 +305,32 @@ function OrderPage() {
     return null;
   }, [name, email, phone, fulfillment, address, when, orderType]);
 
+  const requestConfirm = useCallback(
+    (kind: MethodKind) => {
+      const problem = validate();
+      if (problem) {
+        toast.error(problem);
+        return;
+      }
+      setPendingMethod(kind);
+      setConfirmOpen(true);
+    },
+    [validate],
+  );
+
+  // Wallet sheets are built for a specific amount; the card form isn't.
+  const amountReady = pendingMethod === "card" || walletAmount === grandTotal;
+
   const pay = useCallback(
-    async (method: SquarePaymentMethod | null) => {
+    async (kind: MethodKind) => {
       const problem = validate();
       if (problem) {
         toast.error(problem);
         return;
       }
       const payments = paymentsRef.current;
+      const method =
+        kind === "card" ? cardInstanceRef.current : kind === "apple" ? applePay : googlePay;
       if (!method || !payments) {
         toast.error("The payment form isn't ready yet.");
         return;
@@ -298,6 +358,7 @@ function OrderPage() {
             customer,
           });
           clear();
+          setConfirmOpen(false);
           navigate({ to: "/subscription", search: { token: subscription.manageToken, new: true } });
           return;
         }
@@ -317,6 +378,7 @@ function OrderPage() {
 
         // Keep the cart until we've navigated, so a failed redirect isn't a
         // lost order; /track clears it on arrival.
+        setConfirmOpen(false);
         navigate({ to: "/track", search: { token: order.trackToken, new: true } });
       } catch (error) {
         const message =
@@ -329,6 +391,8 @@ function OrderPage() {
     },
     [
       validate,
+      applePay,
+      googlePay,
       grandTotal,
       name,
       email,
@@ -615,7 +679,7 @@ function OrderPage() {
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="lab-card space-y-4 p-5">
             <h2 className="text-xl font-bold">Order summary</h2>
-            <CartLines compact />
+            <CartLines compact totals={totals} />
 
             <div className="space-y-2 border-t-2 border-dashed border-border pt-4">
               <p className="lab-label text-muted-foreground">Add a tip</p>
@@ -648,7 +712,7 @@ function OrderPage() {
                   <div className="grid gap-2">
                     {applePay && (
                       <button
-                        onClick={() => pay(applePay)}
+                        onClick={() => requestConfirm("apple")}
                         disabled={submitting}
                         className="h-12 w-full rounded-xl border-2 border-ink bg-ink font-semibold text-background disabled:opacity-50"
                       >
@@ -657,7 +721,7 @@ function OrderPage() {
                     )}
                     {googlePay && (
                       <button
-                        onClick={() => pay(googlePay)}
+                        onClick={() => requestConfirm("google")}
                         disabled={submitting}
                         className="h-12 w-full rounded-xl border-2 border-ink bg-card font-semibold disabled:opacity-50"
                       >
@@ -673,7 +737,7 @@ function OrderPage() {
                 )}
 
                 <div
-                  ref={cardRef}
+                  ref={setCardNode}
                   className="min-h-[90px] rounded-xl border-2 border-ink bg-card p-2"
                 />
 
@@ -686,9 +750,9 @@ function OrderPage() {
                   size="xl"
                   className="w-full"
                   disabled={!cardReady || submitting}
-                  onClick={() => pay(cardInstanceRef.current)}
+                  onClick={() => requestConfirm("card")}
                 >
-                  {submitting ? "Processing…" : `Pay ${formatMoney(grandTotal)}`}
+                  {submitting ? "Processing…" : `Review order · ${formatMoney(grandTotal)}`}
                 </Button>
                 <p className="text-center text-xs text-muted-foreground">
                   Secured by Square. Your card details never touch our servers.
@@ -698,6 +762,35 @@ function OrderPage() {
           </div>
         </aside>
       </div>
+
+      <ConfirmOrderDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        plates={plates}
+        extras={extras}
+        menu={menu}
+        totals={totals}
+        fulfillment={fulfillment}
+        whenLabel={whenLabel}
+        deliveryAddress={fulfillment === "delivery" ? address.trim() : ""}
+        tipPercent={tipPercent}
+        tipCents={tipCents}
+        grandTotal={grandTotal}
+        weekly={orderType === "weekly"}
+        amountReady={amountReady}
+        freeSlot={
+          totals.freeDelivery.reason === "needs_lead_time" && firstFreeSlot
+            ? { iso: firstFreeSlot.iso, label: firstFreeSlot.label }
+            : null
+        }
+        onUseFreeSlot={setWhen}
+        submitting={submitting}
+        onAddCustom={(custom: CustomId, plateIds: string[]) => addCustomToPlates(custom, plateIds)}
+        onAddExtra={(extra: ExtraId) => setExtra(extra, 1)}
+        onConfirm={() => {
+          if (pendingMethod) void pay(pendingMethod);
+        }}
+      />
     </PageShell>
   );
 }

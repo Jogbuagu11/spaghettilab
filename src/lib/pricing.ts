@@ -1,5 +1,7 @@
 import {
+  DEFAULT_BASE,
   STATIC_MENU,
+  type BaseId,
   type CustomId,
   type ExtraId,
   type HeatId,
@@ -12,6 +14,12 @@ export interface Plate {
   id: string;
   size: SizeId;
   heat: HeatId;
+  /**
+   * What comes in the plate, free. Absent on carts saved before the choice
+   * existed, which is why it's optional — those predate any intent to skip
+   * the pork, so they fall back to the default it was always served with.
+   */
+  base?: BaseId;
   proteins: Partial<Record<ProteinId, number>>;
   customs: CustomId[];
 }
@@ -23,6 +31,8 @@ export type Fulfillment = "pickup" | "delivery";
 
 export function platePrice(p: Plate, menu: MenuData = STATIC_MENU): number {
   const size = menu.sizes.find((s) => s.id === p.size)?.price ?? 0;
+  // Free today, but priced from the row rather than assumed to be zero.
+  const base = menu.bases.find((b) => b.id === (p.base ?? DEFAULT_BASE))?.price ?? 0;
   const proteins = menu.proteins.reduce(
     (sum, pr) => sum + pr.price * (p.proteins[pr.id as ProteinId] ?? 0),
     0,
@@ -30,7 +40,7 @@ export function platePrice(p: Plate, menu: MenuData = STATIC_MENU): number {
   const customs = menu.customizations
     .filter((c) => p.customs.includes(c.id as CustomId))
     .reduce((sum, c) => sum + c.price, 0);
-  return size + proteins + customs;
+  return size + base + proteins + customs;
 }
 
 export function extrasPrice(

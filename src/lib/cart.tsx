@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { ExtraId } from "./menu";
+import type { CustomId, ExtraId } from "./menu";
 import type { Fulfillment, Plate } from "./pricing";
 
 interface CartState {
@@ -10,6 +10,8 @@ interface CartState {
 interface CartCtx extends CartState {
   addPlate: (p: Omit<Plate, "id">) => void;
   removePlate: (id: string) => void;
+  /** Adds a customization to the named plates, skipping any that have it. */
+  addCustomToPlates: (custom: CustomId, plateIds: string[]) => void;
   setExtra: (id: ExtraId, qty: number) => void;
   setFulfillment: (f: Fulfillment) => void;
   /** Emptied once an order is placed and paid. */
@@ -52,6 +54,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
           setState((s) => ({ ...s, plates: [...s.plates, { ...p, id: crypto.randomUUID() }] })),
         removePlate: (id) =>
           setState((s) => ({ ...s, plates: s.plates.filter((p) => p.id !== id) })),
+        addCustomToPlates: (custom, plateIds) =>
+          setState((s) => ({
+            ...s,
+            plates: s.plates.map((p) =>
+              plateIds.includes(p.id) && !p.customs.includes(custom)
+                ? { ...p, customs: [...p.customs, custom] }
+                : p,
+            ),
+          })),
         setExtra: (id, qty) =>
           setState((s) => ({ ...s, extras: { ...s.extras, [id]: Math.max(0, qty) } })),
         setFulfillment: (fulfillment) => setState((s) => ({ ...s, fulfillment })),

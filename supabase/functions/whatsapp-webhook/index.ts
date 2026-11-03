@@ -26,6 +26,7 @@ interface FlowSubmission {
   size?: string;
   quantity?: string;
   heat?: string;
+  base?: string;
   proteins?: string[];
   customizations?: string[];
   extras?: string[];
@@ -72,6 +73,7 @@ async function handleFlowReply(
     const plate = {
       size: requireString(submission.size, "size", 40),
       heat: requireString(submission.heat, "heat", 40),
+      base: requireString(submission.base, "base", 40),
       proteins: toQuantities(submission.proteins),
       customizations: submission.customizations ?? [],
     };

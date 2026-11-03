@@ -1,7 +1,15 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { formatMoney, type CustomId, type HeatId, type ProteinId, type SizeId } from "@/lib/menu";
+import {
+  DEFAULT_BASE,
+  formatMoney,
+  type BaseId,
+  type CustomId,
+  type HeatId,
+  type ProteinId,
+  type SizeId,
+} from "@/lib/menu";
 import { platePrice } from "@/lib/pricing";
 import { useCart } from "@/lib/cart";
 import { useStorefront } from "@/lib/storefront";
@@ -50,11 +58,13 @@ export function PlateBuilder() {
   const { menu } = useStorefront();
   const [size, setSize] = useState<SizeId | null>(null);
   const [heat, setHeat] = useState<HeatId | null>(null);
+  // Minced pork is what the plate comes with, so it starts selected.
+  const [base, setBase] = useState<BaseId>(DEFAULT_BASE);
   const [proteins, setProteins] = useState<Partial<Record<ProteinId, number>>>({});
   const [customs, setCustoms] = useState<CustomId[]>([]);
 
   const price = size
-    ? platePrice({ id: "", size, heat: heat ?? "mild", proteins, customs }, menu)
+    ? platePrice({ id: "", size, heat: heat ?? "mild", base, proteins, customs }, menu)
     : 0;
   const ready = size && heat;
 
@@ -64,12 +74,13 @@ export function PlateBuilder() {
 
   const add = () => {
     if (!size || !heat) return;
-    addPlate({ size, heat, proteins, customs });
+    addPlate({ size, heat, base, proteins, customs });
     toast.success("Plate added to your formula!", {
       action: { label: "View cart", onClick: () => setOpen(true) },
     });
     setSize(null);
     setHeat(null);
+    setBase(DEFAULT_BASE);
     setProteins({});
     setCustoms([]);
   };
@@ -116,9 +127,28 @@ export function PlateBuilder() {
         </div>
       </Step>
 
+      <Step n="03" title="Meat in the sauce" hint="included">
+        <div className="grid grid-cols-2 gap-2">
+          {menu.bases.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              className="chip disabled:opacity-40"
+              data-active={base === b.id}
+              disabled={!b.available}
+              onClick={() => setBase(b.id as BaseId)}
+            >
+              {b.label}
+              <Allergens tags={b.allergens} />
+              {!b.available && <SoldOut />}
+            </button>
+          ))}
+        </div>
+      </Step>
+
       <Step
-        n="03"
-        title="Add protein"
+        n="04"
+        title="Add more protein"
         hint={`${formatMoney(proteinFrom)} each · stack as many as you like`}
       >
         <div className="space-y-2">
@@ -149,7 +179,7 @@ export function PlateBuilder() {
         </div>
       </Step>
 
-      <Step n="04" title="Customize" hint={`${formatMoney(customFrom)} each`}>
+      <Step n="05" title="Customize" hint={`${formatMoney(customFrom)} each`}>
         <div className="flex flex-wrap gap-2">
           {menu.customizations.map((c) => {
             const on = customs.includes(c.id as CustomId);

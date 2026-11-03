@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { STATIC_MENU, type MenuData, type MenuItem } from "./menu";
+import { STATIC_MENU, type MenuData, type MenuItem, type MenuItemKind } from "./menu";
 import type { DayHours } from "./schedule";
 import { isSupabaseConfigured, supabase } from "./supabase";
 
@@ -70,9 +70,10 @@ interface OptionRow {
   price_cents: number;
   sort_order: number;
   is_available: boolean;
+  kind: MenuItemKind | null;
 }
 
-type MenuGroup = "size" | "heat" | "protein" | "customization" | "extra";
+type MenuGroup = "size" | "heat" | "base" | "protein" | "customization" | "extra";
 
 /** The storefront-safe columns of `settings`; RLS withholds the rest. */
 /**
@@ -146,6 +147,8 @@ const toItem = (row: OptionRow): MenuItem => ({
   description: row.description,
   price: row.price_cents,
   available: row.is_available,
+  // exactOptionalPropertyTypes: an absent kind is absent, not `undefined`.
+  ...(row.kind ? { kind: row.kind } : {}),
 });
 
 async function fetchStorefront(): Promise<Storefront> {
@@ -153,7 +156,7 @@ async function fetchStorefront(): Promise<Storefront> {
     supabase
       .from("menu_options")
       .select(
-        "id, group_name, label, description, price_cents, sort_order, is_available, allergens",
+        "id, group_name, label, description, price_cents, sort_order, is_available, allergens, kind",
       )
       .order("sort_order"),
     supabase.from("settings").select(SETTINGS_COLUMNS).eq("id", 1).maybeSingle(),
@@ -178,6 +181,7 @@ async function fetchStorefront(): Promise<Storefront> {
     menu: {
       sizes: orDefault(group("size"), STATIC_MENU.sizes),
       heat: orDefault(group("heat"), STATIC_MENU.heat),
+      bases: orDefault(group("base"), STATIC_MENU.bases),
       proteins: orDefault(group("protein"), STATIC_MENU.proteins),
       customizations: orDefault(group("customization"), STATIC_MENU.customizations),
       extras: orDefault(group("extra"), STATIC_MENU.extras),

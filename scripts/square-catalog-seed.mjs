@@ -356,8 +356,14 @@ async function main() {
   const lists = [
     modifierList({ key: "heat", name: "Heat", selectionType: "SINGLE", options: byGroup("heat") }),
     modifierList({
+      key: "base",
+      name: "Meat in the sauce",
+      selectionType: "SINGLE",
+      options: byGroup("base"),
+    }),
+    modifierList({
       key: "protein",
-      name: "Proteins",
+      name: "Extra protein",
       selectionType: "MULTIPLE",
       options: byGroup("protein"),
       allowQuantity: true,
