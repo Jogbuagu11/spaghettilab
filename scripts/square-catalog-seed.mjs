@@ -163,16 +163,32 @@ async function square(pathname, init = {}) {
 const money = (cents) => ({ amount: cents, currency: "USD" });
 
 /** Square rejects '#' and most punctuation in temp ids. */
+/** Every modifier list this script manages, for resolving ids afterwards. */
+const LIST_KEYS = [
+  "heat",
+  "base",
+  "protein",
+  "plate-addons",
+  "sandwich-addons",
+  "sandwich",
+];
+
 /** An add-on with no scope recorded belongs to both products. */
 const appliesTo = (option, product) =>
   (option.applies_to ?? ["plate", "sandwich"]).includes(product);
 
 const tempId = (...parts) => `#${parts.join("-").replace(/[^A-Za-z0-9_-]/g, "")}`;
+const modTempId = (optionId, listKey) => tempId("mod", listKey, optionId);
 
-function modifier(option, listTempId) {
+/**
+ * The placeholder id is scoped to the list, not just the option: mushroom
+ * belongs to both add-on lists, and Square rejects a batch that reuses one
+ * temp id across two objects.
+ */
+function modifier(option, listTempId, listKey) {
   return {
     type: "MODIFIER",
-    id: tempId("mod", option.id),
+    id: modTempId(option.id, listKey),
     present_at_all_locations: true,
     modifier_data: {
       name: option.label,
@@ -192,7 +208,7 @@ function modifierList({ key, name, selectionType, options, allowQuantity = false
     modifier_list_data: {
       name,
       selection_type: selectionType,
-      modifiers: options.map((o) => modifier(o, listId)),
+      modifiers: options.map((o) => modifier(o, listId, key)),
       ...(allowQuantity ? { allow_quantity: true } : {}),
     },
   };
@@ -474,7 +490,12 @@ async function main() {
   for (const option of options) {
     // After reconciliation an object's `id` is already real, so look the row
     // up by both the temp key and whatever the id became.
-    const objectId = resolved.get(tempId("mod", option.id)) ?? option.square_object_id ?? null;
+    // An option can appear in more than one list; any of its Square ids will
+    // do for the back-link, so take the first that resolved.
+    const objectId =
+      LIST_KEYS.map((k) => resolved.get(modTempId(option.id, k))).find(Boolean) ??
+      option.square_object_id ??
+      null;
     const variationId =
       resolved.get(tempId("var", option.id)) ?? option.square_variation_id ?? null;
     if (!objectId && !variationId) continue;
