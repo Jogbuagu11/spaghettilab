@@ -1,6 +1,6 @@
 # Spaghetti Lab
 
-Order-ahead storefront for a permitted MEHKO home kitchen in Berryessa, North San Jose.
+Order-ahead storefront for Spaghetti Lab, 82 E Santa Clara St, Downtown San Jose.
 Customers build a spaghetti plate, order it once or every week, and pay by card, Apple Pay
 or Google Pay.
 

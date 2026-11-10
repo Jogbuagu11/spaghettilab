@@ -12,7 +12,7 @@ export const Route = createFileRoute("/menu")({
   head: () => ({
     ...pageMeta(
       "Menu — Build Your Spaghetti Plate | Spaghetti Lab San Jose",
-      "Spaghetti plates from $12 and meatball or sausage subs from $10. Choose spicy or not, add garlic bread and drinks. Pickup or delivery in Berryessa, San Jose.",
+      "Spaghetti plates from $12 and meatball or sausage subs from $10. Choose spicy or not, add garlic bread and drinks. Pickup or delivery in Downtown San Jose.",
       "/menu",
     ),
     scripts: [{ type: "application/ld+json", children: JSON.stringify(menuLd) }],

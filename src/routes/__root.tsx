@@ -86,7 +86,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Build your own spaghetti plate and get it in about 15 minutes. Pickup in Berryessa or delivery within 5 miles of 95131, San Jose.",
+          "Build your own spaghetti plate and get it in about 15 minutes. Pickup downtown or delivery within 5 miles of 95113, San Jose.",
       },
 
       // Defaults for any page that doesn't set its own; pageMeta() overrides these.

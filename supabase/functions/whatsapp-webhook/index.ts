@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
           } else if (message.type === "text" || message.type === "button") {
             await sendFlowPrompt(
               from,
-              "Hi! 🍝 Tap below to build your plate — pickup or delivery in Berryessa.",
+              "Hi! 🍝 Tap below to build your plate — pickup or delivery in Downtown San Jose.",
             );
           }
         }

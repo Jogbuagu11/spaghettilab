@@ -82,8 +82,8 @@ export function SiteFooter() {
             Spaghetti Lab
           </p>
           <p className="mt-2 text-sm opacity-80">
-            Fresh spaghetti pickup &amp; delivery in Berryessa, North San Jose. Serving{" "}
-            {settings.originPostalCode}, Milpitas and nearby.
+            Fresh spaghetti pickup &amp; delivery in Downtown San Jose. Serving{" "}
+            {settings.originPostalCode} and everywhere within {settings.deliveryRadiusMiles} miles.
           </p>
           <p className="lab-label mt-4 inline-block rounded-full border border-background/40 px-3 py-1">
             Permitted MEHKO — Santa Clara County

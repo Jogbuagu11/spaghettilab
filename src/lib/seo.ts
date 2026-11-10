@@ -67,8 +67,7 @@ export const restaurantLd = {
   url: SITE_URL,
   image: OG_IMAGE,
   logo: absolute("/logo.png"),
-  description:
-    "Fresh spaghetti plates built to order — pickup and delivery in Berryessa, North San Jose.",
+  description: "Fresh spaghetti plates built to order — pickup and delivery in Downtown San Jose.",
   servesCuisine: "Italian-American",
   priceRange: "$$",
   currenciesAccepted: "USD",
@@ -77,12 +76,12 @@ export const restaurantLd = {
     "@type": "PostalAddress",
     addressLocality: "San Jose",
     addressRegion: "CA",
-    postalCode: "95131",
+    postalCode: "95113",
     addressCountry: "US",
   },
   areaServed: {
     "@type": "GeoCircle",
-    geoMidpoint: { "@type": "GeoCoordinates", latitude: 37.3858, longitude: -121.8615 },
+    geoMidpoint: { "@type": "GeoCoordinates", latitude: 37.336826, longitude: -121.888506 },
     geoRadius: "8047",
   },
   openingHoursSpecification: [

@@ -54,7 +54,7 @@ const DEFAULT_SETTINGS: StorefrontSettings = {
   ga4MeasurementId: null,
   metaPixelId: null,
   deliveryRadiusMiles: 5,
-  originPostalCode: "95131",
+  originPostalCode: "95113",
   slotIntervalMinutes: 15,
   deliveryPerHourLimit: 3,
   lateCancelFeePercent: 50,

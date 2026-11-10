@@ -32,7 +32,7 @@ function catalog(closedDays: number[] = []): Catalog {
       delivery_radius_miles: 5,
       origin_lat: 37.3858,
       origin_lng: -121.8615,
-      origin_postal_code: "95131",
+      origin_postal_code: "95113",
       pickup_address: null,
       contact_email: "",
       contact_phone: null,

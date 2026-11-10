@@ -29,7 +29,7 @@ export const Route = createFileRoute("/order")({
   head: () => ({
     ...pageMeta(
       "Checkout — Pickup or Delivery | Spaghetti Lab",
-      "Choose pickup in Berryessa or delivery within 5 miles of 95131, pick ASAP or a scheduled time, and pay securely with card, Apple Pay or Google Pay.",
+      "Choose pickup in Downtown San Jose or delivery within 5 miles of 95113, pick ASAP or a scheduled time, and pay securely with card, Apple Pay or Google Pay.",
       "/order",
     ),
     meta: [
@@ -523,8 +523,8 @@ function OrderPage() {
             </div>
             {fulfillment === "pickup" ? (
               <p className="text-sm text-muted-foreground">
-                Pickup in Berryessa, San Jose. We email you the exact address as soon as your order
-                is paid.
+                Pickup in Downtown San Jose. We email you the exact address as soon as your order is
+                paid.
               </p>
             ) : (
               <div className="space-y-2">

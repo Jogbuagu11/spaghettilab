@@ -18,7 +18,7 @@ export const Route = createFileRoute("/reviews")({
   head: () => ({
     ...pageMeta(
       "Reviews — What our customers say | Spaghetti Lab",
-      "Verified reviews from real Spaghetti Lab orders in Berryessa, San Jose. Every review comes from a customer who actually ordered.",
+      "Verified reviews from real Spaghetti Lab orders in Downtown San Jose. Every review comes from a customer who actually ordered.",
       "/reviews",
     ),
   }),
