@@ -27,10 +27,28 @@ export const PROTEINS = [
 export type ProteinId = (typeof PROTEINS)[number]["id"];
 
 export const CUSTOMIZATIONS = [
-  { id: "mushroom", label: "Mushroom", price: 100 },
-  { id: "extra-cheese", label: "Extra Cheese", price: 100, kind: "cheese" },
+  { id: "mushroom", label: "Mushroom", price: 100, appliesTo: ["plate", "sandwich"] },
+  { id: "extra-cheese", label: "Extra Cheese", price: 100, kind: "cheese", appliesTo: ["plate"] },
+  { id: "provolone", label: "Provolone", price: 100, appliesTo: ["sandwich"] },
 ] as const;
 export type CustomId = (typeof CUSTOMIZATIONS)[number]["id"];
+
+// --- sandwiches ---------------------------------------------------------
+// A second product line, not a plate variant: the price lives on the size,
+// and both fillings cost the same, so the filling is a free choice.
+
+export const SANDWICH_SIZES = [
+  { id: "sandwich-small", label: "Small", price: 1000 },
+  { id: "sandwich-medium", label: "Medium", price: 1200 },
+  { id: "sandwich-large", label: "Large", price: 1800 },
+] as const;
+export type SandwichSizeId = (typeof SANDWICH_SIZES)[number]["id"];
+
+export const SANDWICH_FILLINGS = [
+  { id: "sandwich-meatball", label: "Meatball" },
+  { id: "sandwich-sausage", label: "Sausage" },
+] as const;
+export type SandwichFillingId = (typeof SANDWICH_FILLINGS)[number]["id"];
 
 export const EXTRAS = [
   { id: "garlic-bread", label: "Garlic Bread (slice)", price: 200, kind: "side" },
@@ -68,13 +86,22 @@ export interface MenuItem {
   allergens: string[];
   /** What the item actually is, where that matters for the upsell. */
   kind?: MenuItemKind;
+  /** Add-ons only: which products offer it. Defaults to both. */
+  appliesTo: ProductKind[];
 }
+
+/** The two things a customer can order as a main. */
+export type ProductKind = "plate" | "sandwich";
 
 /** What an option is, so checkout can tell a Coke from a slice of bread. */
 export type MenuItemKind = "drink" | "side" | "cheese";
 
 export interface MenuData {
   sizes: MenuItem[];
+  /** Sandwich sizes — priced separately from plate sizes. */
+  sandwichSizes: MenuItem[];
+  /** Meatball or sausage, free: both sizes cost the same. */
+  sandwichFillings: MenuItem[];
   heat: MenuItem[];
   /** Single-select, free: minced pork (the default) or nothing. */
   bases: MenuItem[];
@@ -98,7 +125,13 @@ const isKind = (v: unknown): v is MenuItemKind =>
   typeof v === "string" && (KINDS as readonly string[]).includes(v);
 
 const toItems = (
-  xs: ReadonlyArray<{ id: string; label: string; price?: number; kind?: string }>,
+  xs: ReadonlyArray<{
+    id: string;
+    label: string;
+    price?: number;
+    kind?: string;
+    appliesTo?: readonly string[];
+  }>,
 ): MenuItem[] =>
   xs.map((x) => ({
     id: x.id,
@@ -106,11 +139,18 @@ const toItems = (
     price: x.price ?? 0,
     available: true,
     allergens: [],
+    appliesTo: [...(x.appliesTo ?? ["plate", "sandwich"])] as ProductKind[],
     ...(isKind(x.kind) ? { kind: x.kind } : {}),
   }));
 
+/** The add-ons offered on one product. */
+export const addOnsFor = (menu: MenuData, product: ProductKind): MenuItem[] =>
+  menu.customizations.filter((c) => c.appliesTo.includes(product));
+
 export const STATIC_MENU: MenuData = {
   sizes: toItems(SIZES),
+  sandwichSizes: toItems(SANDWICH_SIZES),
+  sandwichFillings: toItems(SANDWICH_FILLINGS),
   heat: toItems(HEAT),
   bases: toItems(BASES),
   proteins: toItems(PROTEINS),

@@ -7,6 +7,8 @@ import {
   type HeatId,
   type MenuData,
   type ProteinId,
+  type SandwichFillingId,
+  type SandwichSizeId,
   type SizeId,
 } from "./menu";
 
@@ -21,6 +23,15 @@ export interface Plate {
    */
   base?: BaseId;
   proteins: Partial<Record<ProteinId, number>>;
+  customs: CustomId[];
+}
+
+/** The other thing you can order. Priced by size; the filling is free. */
+export interface Sandwich {
+  id: string;
+  size: SandwichSizeId;
+  filling: SandwichFillingId;
+  heat: HeatId;
   customs: CustomId[];
 }
 
@@ -41,6 +52,16 @@ export function platePrice(p: Plate, menu: MenuData = STATIC_MENU): number {
     .filter((c) => p.customs.includes(c.id as CustomId))
     .reduce((sum, c) => sum + c.price, 0);
   return size + base + proteins + customs;
+}
+
+export function sandwichPrice(s: Sandwich, menu: MenuData = STATIC_MENU): number {
+  const size = menu.sandwichSizes.find((x) => x.id === s.size)?.price ?? 0;
+  const filling = menu.sandwichFillings.find((x) => x.id === s.filling)?.price ?? 0;
+  const heat = menu.heat.find((h) => h.id === s.heat)?.price ?? 0;
+  const customs = menu.customizations
+    .filter((c) => s.customs.includes(c.id as CustomId))
+    .reduce((sum, c) => sum + c.price, 0);
+  return size + filling + heat + customs;
 }
 
 export function extrasPrice(
@@ -142,8 +163,12 @@ export function orderTotals(
   taxRate: number,
   menu: MenuData = STATIC_MENU,
   timing: DeliveryTiming = ASAP(),
+  sandwiches: Sandwich[] = [],
 ) {
-  const subtotal = plates.reduce((s, p) => s + platePrice(p, menu), 0) + extrasPrice(extras, menu);
+  const subtotal =
+    plates.reduce((s, p) => s + platePrice(p, menu), 0) +
+    sandwiches.reduce((s, x) => s + sandwichPrice(x, menu), 0) +
+    extrasPrice(extras, menu);
   const freeDelivery = evaluateFreeDelivery(subtotal, fulfillment, menu, timing);
   const delivery = freeDelivery.free ? 0 : menu.deliveryFee;
   const tax = roundCents(subtotal * taxRate);

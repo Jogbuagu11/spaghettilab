@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { STATIC_MENU, type MenuData, type MenuItem, type MenuItemKind } from "./menu";
+import {
+  STATIC_MENU,
+  type MenuData,
+  type MenuItem,
+  type MenuItemKind,
+  type ProductKind,
+} from "./menu";
 import type { DayHours } from "./schedule";
 import { isSupabaseConfigured, supabase } from "./supabase";
 
@@ -71,9 +77,11 @@ interface OptionRow {
   sort_order: number;
   is_available: boolean;
   kind: MenuItemKind | null;
+  applies_to: ProductKind[] | null;
 }
 
-type MenuGroup = "size" | "heat" | "base" | "protein" | "customization" | "extra";
+type MenuGroup =
+  "size" | "heat" | "base" | "protein" | "customization" | "extra" | "sandwich" | "sandwich_size";
 
 /** The storefront-safe columns of `settings`; RLS withholds the rest. */
 /**
@@ -147,6 +155,7 @@ const toItem = (row: OptionRow): MenuItem => ({
   description: row.description,
   price: row.price_cents,
   available: row.is_available,
+  appliesTo: row.applies_to ?? ["plate", "sandwich"],
   // exactOptionalPropertyTypes: an absent kind is absent, not `undefined`.
   ...(row.kind ? { kind: row.kind } : {}),
 });
@@ -156,7 +165,7 @@ async function fetchStorefront(): Promise<Storefront> {
     supabase
       .from("menu_options")
       .select(
-        "id, group_name, label, description, price_cents, sort_order, is_available, allergens, kind",
+        "id, group_name, label, description, price_cents, sort_order, is_available, allergens, kind, applies_to",
       )
       .order("sort_order"),
     supabase.from("settings").select(SETTINGS_COLUMNS).eq("id", 1).maybeSingle(),
@@ -180,6 +189,8 @@ async function fetchStorefront(): Promise<Storefront> {
   return {
     menu: {
       sizes: orDefault(group("size"), STATIC_MENU.sizes),
+      sandwichSizes: orDefault(group("sandwich_size"), STATIC_MENU.sandwichSizes),
+      sandwichFillings: orDefault(group("sandwich"), STATIC_MENU.sandwichFillings),
       heat: orDefault(group("heat"), STATIC_MENU.heat),
       bases: orDefault(group("base"), STATIC_MENU.bases),
       proteins: orDefault(group("protein"), STATIC_MENU.proteins),

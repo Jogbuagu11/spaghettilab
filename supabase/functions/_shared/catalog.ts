@@ -4,11 +4,22 @@ import { leadHours } from "./schedule.ts";
 
 export interface MenuOption {
   id: string;
-  group_name: "size" | "heat" | "base" | "protein" | "customization" | "extra";
+  group_name:
+    | "size"
+    | "heat"
+    | "base"
+    | "protein"
+    | "customization"
+    | "extra"
+    | "sandwich"
+    | "sandwich_size";
   label: string;
+  description: string | null;
   price_cents: number;
   sort_order: number;
   is_available: boolean;
+  /** Add-ons only: which products offer it. */
+  applies_to: ("plate" | "sandwich")[] | null;
 }
 
 export interface Settings {
@@ -53,7 +64,11 @@ export interface Catalog {
 
 export async function loadCatalog(db: SupabaseClient): Promise<Catalog> {
   const [options, settings, hours] = await Promise.all([
-    db.from("menu_options").select("id, group_name, label, price_cents, sort_order, is_available"),
+    db
+      .from("menu_options")
+      .select(
+        "id, group_name, label, description, price_cents, sort_order, is_available, applies_to",
+      ),
     db.from("settings").select("*").eq("id", 1).single(),
     db.from("business_hours").select("*").order("day_of_week"),
   ]);
@@ -96,8 +111,16 @@ export interface PlateInput {
   customizations?: string[];
 }
 
+export interface SandwichInput {
+  size: string;
+  filling: string;
+  heat: string;
+  customizations?: string[];
+}
+
 export interface CartInput {
   plates: PlateInput[];
+  sandwiches?: SandwichInput[];
   extras?: Record<string, number>;
   fulfillment: "pickup" | "delivery";
 }
@@ -115,7 +138,7 @@ export interface SquareLineBreakdown {
 }
 
 export interface PricedLine {
-  kind: "plate" | "extra";
+  kind: "plate" | "sandwich" | "extra";
   label: string;
   quantity: number;
   unit_price_cents: number;
@@ -223,6 +246,19 @@ function defaultBase(catalog: Catalog): string {
   return best.id;
 }
 
+/**
+ * An add-on, checked against the product it was asked for. Provolone on
+ * spaghetti is a client that's lying or stale; either way it isn't on sale.
+ */
+function addOn(catalog: Catalog, id: unknown, product: "plate" | "sandwich"): MenuOption {
+  const found = option(catalog, id, "customization");
+  const appliesTo = found.applies_to ?? ["plate", "sandwich"];
+  if (!appliesTo.includes(product)) {
+    throw new PublicError(`${found.label} isn't available on a ${product}.`);
+  }
+  return found;
+}
+
 /** Looks an option up, rejecting unknown ids and anything marked sold out. */
 function option(catalog: Catalog, id: unknown, group: MenuOption["group_name"]): MenuOption {
   if (typeof id !== "string") throw new PublicError(`Invalid ${group} selection.`);
@@ -249,18 +285,21 @@ export function priceOrder(
   tipCents = 0,
   timing: DeliveryTiming = { scheduledFor: null, now: new Date() },
 ): PricedOrder {
-  if (!Array.isArray(cart.plates) || cart.plates.length === 0) {
-    throw new PublicError("Add at least one spaghetti plate to your order.");
+  const sandwiches = Array.isArray(cart.sandwiches) ? cart.sandwiches : [];
+  const plates = Array.isArray(cart.plates) ? cart.plates : [];
+  // A sandwich is a meal too, so the gate is "something to eat", not "a plate".
+  if (plates.length + sandwiches.length === 0) {
+    throw new PublicError("Add a spaghetti plate or a sandwich to your order.");
   }
-  if (cart.plates.length > MAX_PLATES) {
-    throw new PublicError(`Orders are limited to ${MAX_PLATES} plates — call us for catering.`);
+  if (plates.length + sandwiches.length > MAX_PLATES) {
+    throw new PublicError(`Orders are limited to ${MAX_PLATES} items — call us for catering.`);
   }
 
   const lines: PricedLine[] = [];
   let subtotal = 0;
   let sort = 0;
 
-  for (const plate of cart.plates) {
+  for (const plate of plates) {
     const size = option(catalog, plate.size, "size");
     const heat = option(catalog, plate.heat, "heat");
     // Single choice and free today, but priced from its row like everything
@@ -287,7 +326,7 @@ export function priceOrder(
 
     const customizations: string[] = [];
     for (const id of plate.customizations ?? []) {
-      const custom = option(catalog, id, "customization");
+      const custom = addOn(catalog, id, "plate");
       if (customizations.includes(custom.id)) continue;
       customizations.push(custom.id);
       price += custom.price_cents;
@@ -313,6 +352,56 @@ export function priceOrder(
       square: {
         name: "Spaghetti Plate",
         variationName: size.label,
+        basePriceCents: size.price_cents,
+        modifiers,
+      },
+    });
+    subtotal += price;
+  }
+
+  for (const sandwich of sandwiches) {
+    const size = option(catalog, sandwich.size, "sandwich_size");
+    const filling = option(catalog, sandwich.filling, "sandwich");
+    const heat = option(catalog, sandwich.heat, "heat");
+
+    let price = size.price_cents + filling.price_cents + heat.price_cents;
+    const parts: string[] = [heat.label];
+    const modifiers: SquareLineBreakdown["modifiers"] = [
+      { name: filling.label, priceCents: filling.price_cents, quantity: 1 },
+      { name: heat.label, priceCents: heat.price_cents, quantity: 1 },
+    ];
+
+    const customizations: string[] = [];
+    for (const id of sandwich.customizations ?? []) {
+      const custom = addOn(catalog, id, "sandwich");
+      if (customizations.includes(custom.id)) continue;
+      customizations.push(custom.id);
+      price += custom.price_cents;
+      parts.push(custom.label);
+      modifiers.push({ name: custom.label, priceCents: custom.price_cents, quantity: 1 });
+    }
+
+    // The inches are what the customer actually chose between, so they belong
+    // on the receipt and the kitchen ticket, not just in the builder.
+    const inches = size.description ? ` (${size.description})` : "";
+
+    lines.push({
+      kind: "sandwich",
+      label: `${filling.label} Sandwich — ${size.label}${inches}`,
+      quantity: 1,
+      unit_price_cents: price,
+      total_price_cents: price,
+      config: {
+        size: size.id,
+        filling: filling.id,
+        heat: heat.id,
+        customizations,
+        summary: parts.join(" · "),
+      },
+      sort_order: sort++,
+      square: {
+        name: "Sandwich",
+        variationName: `${size.label}${inches}`,
         basePriceCents: size.price_cents,
         modifiers,
       },

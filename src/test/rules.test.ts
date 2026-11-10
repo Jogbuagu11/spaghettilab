@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { addOnsFor, STATIC_MENU } from "@/lib/menu";
 import {
   evaluateFreeDelivery,
   orderTotals,
   platePrice,
   roundCents,
+  sandwichPrice,
   type Plate,
+  type Sandwich,
 } from "@/lib/pricing";
 import { availableSlots, canOrderAsap } from "@/lib/schedule";
 
@@ -166,5 +169,66 @@ describe("tax rounding", () => {
     ] as const) {
       expect(roundCents(subtotal * 0.09375)).toBe(square);
     }
+  });
+});
+
+// Sandwiches price off their own size list — a sub is $10/$12/$18 where a
+// plate is $12/$18/$26 — and the filling is free because both cost the same.
+describe("sandwiches", () => {
+  const sandwich = (o: Partial<Sandwich> = {}): Sandwich => ({
+    id: "s1",
+    size: "sandwich-small",
+    filling: "sandwich-meatball",
+    heat: "mild",
+    customs: [],
+    ...o,
+  });
+
+  it("prices sizes 10/12/18", () => {
+    expect(sandwichPrice(sandwich())).toBe(1000);
+    expect(sandwichPrice(sandwich({ size: "sandwich-medium" }))).toBe(1200);
+    expect(sandwichPrice(sandwich({ size: "sandwich-large" }))).toBe(1800);
+  });
+
+  it("charges nothing for the filling", () => {
+    expect(sandwichPrice(sandwich({ filling: "sandwich-meatball" }))).toBe(
+      sandwichPrice(sandwich({ filling: "sandwich-sausage" })),
+    );
+  });
+
+  it("charges $1 for a slice of provolone", () => {
+    expect(sandwichPrice(sandwich({ customs: ["provolone"] }))).toBe(1100);
+  });
+
+  it("counts toward the order subtotal alongside plates", () => {
+    const t = orderTotals([plate()], {}, "pickup", 0, undefined, undefined, [
+      sandwich({ size: "sandwich-large" }),
+    ]);
+    expect(t.subtotal).toBe(1200 + 1800);
+  });
+
+  it("can be the whole order", () => {
+    const t = orderTotals([], {}, "pickup", 0, undefined, undefined, [sandwich()]);
+    expect(t.subtotal).toBe(1000);
+  });
+});
+
+// Provolone on spaghetti and grated parmesan on a sub are both wrong.
+describe("add-on scoping", () => {
+  it("offers parmesan on a plate but not provolone", () => {
+    const ids = addOnsFor(STATIC_MENU, "plate").map((c) => c.id);
+    expect(ids).toContain("extra-cheese");
+    expect(ids).not.toContain("provolone");
+  });
+
+  it("offers provolone on a sandwich but not parmesan", () => {
+    const ids = addOnsFor(STATIC_MENU, "sandwich").map((c) => c.id);
+    expect(ids).toContain("provolone");
+    expect(ids).not.toContain("extra-cheese");
+  });
+
+  it("offers mushroom on both", () => {
+    expect(addOnsFor(STATIC_MENU, "plate").map((c) => c.id)).toContain("mushroom");
+    expect(addOnsFor(STATIC_MENU, "sandwich").map((c) => c.id)).toContain("mushroom");
   });
 });

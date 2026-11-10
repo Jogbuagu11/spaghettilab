@@ -12,11 +12,13 @@ const option = (
   id,
   group_name: group,
   label: id,
+  description: null,
   price_cents: price,
   // Only the order within the base group matters (it picks the default);
   // a running counter preserves declaration order for every group.
   sort_order: nextSort++,
   is_available: available,
+  applies_to: null,
 });
 
 function catalog(overrides: Partial<Catalog["settings"]> = {}, soldOut: string[] = []): Catalog {
@@ -32,6 +34,12 @@ function catalog(overrides: Partial<Catalog["settings"]> = {}, soldOut: string[]
     option("meatball", "protein", 400),
     option("sausage", "protein", 400),
     option("mushroom", "customization", 100),
+    { ...option("provolone", "customization", 100), applies_to: ["sandwich" as const] },
+    { ...option("extra-cheese", "customization", 100), applies_to: ["plate" as const] },
+    option("sandwich-small", "sandwich_size", 1000),
+    { ...option("sandwich-large", "sandwich_size", 1800), description: "8 in" },
+    option("sandwich-meatball", "sandwich", 0),
+    option("sandwich-sausage", "sandwich", 0),
     option("coke", "extra", 200),
   ].map((o) => (soldOut.includes(o.id) ? { ...o, is_available: false } : o));
 
@@ -133,7 +141,7 @@ Deno.test("rejects an empty cart", () => {
   assertThrows(
     () => priceOrder(catalog(), { plates: [], fulfillment: "pickup" }),
     PublicError,
-    "at least one",
+    "plate or a sandwich",
   );
 });
 
@@ -418,4 +426,103 @@ Deno.test("an unknown base is rejected", () => {
     () => priceOrder(catalog(), { plates: [plate({ base: "wagyu" })], fulfillment: "pickup" }),
     PublicError,
   );
+});
+
+// --- sandwiches -----------------------------------------------------------
+
+const sub = (extra: Record<string, unknown> = {}) => ({
+  size: "sandwich-small",
+  filling: "sandwich-meatball",
+  heat: "mild",
+  customizations: [],
+  ...extra,
+});
+
+Deno.test("a sandwich prices off its own size list, not the plate's", () => {
+  const priced = priceOrder(catalog(), { plates: [], sandwiches: [sub()], fulfillment: "pickup" });
+  assertEquals(priced.subtotal_cents, 1000);
+});
+
+Deno.test("the filling is free either way", () => {
+  const meat = priceOrder(catalog(), { plates: [], sandwiches: [sub()], fulfillment: "pickup" });
+  const saus = priceOrder(catalog(), {
+    plates: [],
+    sandwiches: [sub({ filling: "sandwich-sausage" })],
+    fulfillment: "pickup",
+  });
+  assertEquals(meat.subtotal_cents, saus.subtotal_cents);
+});
+
+Deno.test("a sandwich can be the whole order", () => {
+  const priced = priceOrder(catalog(), { plates: [], sandwiches: [sub()], fulfillment: "pickup" });
+  assertEquals(priced.lines.length, 1);
+  assertEquals(priced.lines[0]!.kind, "sandwich");
+});
+
+Deno.test("an order with neither a plate nor a sandwich is refused", () => {
+  assertThrows(
+    () => priceOrder(catalog(), { plates: [], extras: { coke: 1 }, fulfillment: "pickup" }),
+    PublicError,
+  );
+});
+
+Deno.test("the receipt line names the filling, size and inches", () => {
+  const priced = priceOrder(catalog(), {
+    plates: [],
+    sandwiches: [sub({ size: "sandwich-large" })],
+    fulfillment: "pickup",
+  });
+  assertEquals(priced.lines[0]!.label, "sandwich-meatball Sandwich — sandwich-large (8 in)");
+});
+
+// --- add-on scoping -------------------------------------------------------
+// The builder hides the wrong add-ons, but the server is what charges, so it
+// has to refuse them too — a stale tab is enough to send one.
+
+Deno.test("provolone cannot be ordered on a plate", () => {
+  assertThrows(
+    () =>
+      priceOrder(catalog(), {
+        plates: [plate({ customizations: ["provolone"] })],
+        fulfillment: "pickup",
+      }),
+    PublicError,
+    "isn't available on a plate",
+  );
+});
+
+Deno.test("grated parmesan cannot be ordered on a sandwich", () => {
+  assertThrows(
+    () =>
+      priceOrder(catalog(), {
+        plates: [],
+        sandwiches: [sub({ customizations: ["extra-cheese"] })],
+        fulfillment: "pickup",
+      }),
+    PublicError,
+    "isn't available on a sandwich",
+  );
+});
+
+Deno.test("mushroom is allowed on both", () => {
+  const onPlate = priceOrder(catalog(), {
+    plates: [plate({ customizations: ["mushroom"] })],
+    fulfillment: "pickup",
+  });
+  const onSub = priceOrder(catalog(), {
+    plates: [],
+    sandwiches: [sub({ customizations: ["mushroom"] })],
+    fulfillment: "pickup",
+  });
+  assertEquals(onPlate.subtotal_cents, 1900);
+  assertEquals(onSub.subtotal_cents, 1100);
+});
+
+Deno.test("provolone on a sandwich costs a dollar", () => {
+  const priced = priceOrder(catalog(), {
+    plates: [],
+    sandwiches: [sub({ customizations: ["provolone"] })],
+    fulfillment: "pickup",
+  });
+  assertEquals(priced.subtotal_cents, 1100);
 });

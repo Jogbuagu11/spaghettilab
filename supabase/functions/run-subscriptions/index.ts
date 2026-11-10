@@ -74,6 +74,7 @@ Deno.serve(async (req) => {
 
     const cart: CartInput = {
       plates: sub.plates,
+      sandwiches: sub.sandwiches ?? [],
       extras: sub.extras ?? {},
       fulfillment: sub.fulfillment,
     };

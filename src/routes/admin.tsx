@@ -756,7 +756,16 @@ function MenuTab() {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Save failed."),
   });
 
-  const groups = ["size", "heat", "base", "protein", "customization", "extra"];
+  const groups = [
+    "size",
+    "heat",
+    "base",
+    "protein",
+    "sandwich_size",
+    "sandwich",
+    "customization",
+    "extra",
+  ];
 
   return (
     <div className="space-y-6">

@@ -1,4 +1,4 @@
-import { EXTRAS, SIZES } from "./menu";
+import { EXTRAS, SANDWICH_FILLINGS, SANDWICH_SIZES, SIZES } from "./menu";
 
 export const DAYS_LD = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -13,9 +13,22 @@ export const menuLd = {
       hasMenuItem: SIZES.map((s) => ({
         "@type": "MenuItem",
         name: `${s.label} Spaghetti Plate`,
-        description: "Fresh spaghetti, spicy or not spicy, with optional meatball, sausage or minced pork.",
+        description:
+          "Fresh spaghetti with minced pork in the sauce, spicy or not. Add meatballs or sausage.",
         offers: { "@type": "Offer", price: (s.price / 100).toFixed(2), priceCurrency: "USD" },
       })),
+    },
+    {
+      "@type": "MenuSection",
+      name: "Sandwiches",
+      hasMenuItem: SANDWICH_FILLINGS.flatMap((f) =>
+        SANDWICH_SIZES.map((s) => ({
+          "@type": "MenuItem",
+          name: `${f.label} Sandwich — ${s.label}`,
+          description: "Meatball or sausage, spicy or not, on bread.",
+          offers: { "@type": "Offer", price: (s.price / 100).toFixed(2), priceCurrency: "USD" },
+        })),
+      ),
     },
     {
       "@type": "MenuSection",

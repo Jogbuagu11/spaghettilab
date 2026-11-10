@@ -49,8 +49,16 @@ type OrderType = "once" | "weekly";
 
 function OrderPage() {
   const navigate = useNavigate();
-  const { plates, extras, fulfillment, setFulfillment, clear, addCustomToPlates, setExtra } =
-    useCart();
+  const {
+    plates,
+    sandwiches,
+    extras,
+    fulfillment,
+    setFulfillment,
+    clear,
+    addCustomToPlates,
+    setExtra,
+  } = useCart();
   const { menu, hours, settings } = useStorefront();
 
   // Rendered on the client only — the server has no "now".
@@ -113,11 +121,19 @@ function OrderPage() {
   // Free delivery depends on how far ahead the order is, so the chosen slot
   // feeds straight into the quoted total. The server re-checks it before charging.
   const scheduledFor = when && when !== "asap" ? new Date(when) : null;
-  const totals = orderTotals(plates, extras, fulfillment, menu.taxRate, menu, {
-    scheduledFor,
-    now: now ?? new Date(),
-    isSubscription: orderType === "weekly",
-  });
+  const totals = orderTotals(
+    plates,
+    extras,
+    fulfillment,
+    menu.taxRate,
+    menu,
+    {
+      scheduledFor,
+      now: now ?? new Date(),
+      isSubscription: orderType === "weekly",
+    },
+    sandwiches,
+  );
   const tipCents = Math.round(totals.subtotal * (tipPercent / 100));
   const grandTotal = totals.total + tipCents;
 
@@ -349,6 +365,7 @@ function OrderPage() {
           const subscription = await createSubscription({
             sourceId: token,
             plates,
+            sandwiches,
             extras,
             fulfillment,
             dayOfWeek: weeklyDay,
@@ -367,6 +384,7 @@ function OrderPage() {
           sourceId: token,
           verificationToken,
           plates,
+          sandwiches,
           extras,
           fulfillment,
           when,
@@ -398,6 +416,7 @@ function OrderPage() {
       email,
       phone,
       plates,
+      sandwiches,
       extras,
       fulfillment,
       when,
@@ -413,16 +432,18 @@ function OrderPage() {
     ],
   );
 
-  if (plates.length === 0) {
+  // Sandwiches are a meal in their own right, so the gate is "something to
+  // eat", not "a plate". Sides and drinks alone still aren't an order.
+  if (plates.length + sandwiches.length === 0) {
     return (
       <PageShell>
         <div className="mx-auto max-w-md px-4 py-24 text-center">
           <h1 className="text-4xl font-black">Checkout</h1>
           <p className="mt-3 text-muted-foreground">
-            Add at least one spaghetti plate to start your order.
+            Add a spaghetti plate or a sandwich to start your order.
           </p>
           <Button asChild variant="lab" size="xl" className="mt-6">
-            <Link to="/menu">Build a plate</Link>
+            <Link to="/menu">Build your order</Link>
           </Button>
         </div>
       </PageShell>

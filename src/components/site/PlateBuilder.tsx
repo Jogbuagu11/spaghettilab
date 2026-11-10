@@ -3,19 +3,22 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DEFAULT_BASE,
+  addOnsFor,
   formatMoney,
   type BaseId,
   type CustomId,
   type HeatId,
   type ProteinId,
+  type SandwichFillingId,
+  type SandwichSizeId,
   type SizeId,
 } from "@/lib/menu";
-import { platePrice } from "@/lib/pricing";
+import { platePrice, sandwichPrice } from "@/lib/pricing";
 import { useCart } from "@/lib/cart";
 import { useStorefront } from "@/lib/storefront";
 import { Qty } from "./Qty";
 
-function Step({
+export function Step({
   n,
   title,
   hint,
@@ -39,12 +42,12 @@ function Step({
 }
 
 /** Sold-out options stay visible but unselectable, so the menu reads consistently. */
-function SoldOut() {
+export function SoldOut() {
   return <span className="ml-1 text-xs font-normal text-muted-foreground">Sold out</span>;
 }
 
 /** Allergen tags, inline so the warning sits with the thing it describes. */
-function Allergens({ tags }: { tags: string[] }) {
+export function Allergens({ tags }: { tags: string[] }) {
   if (tags.length === 0) return null;
   return (
     // Inherits the parent's colour instead of pinning a muted grey: on a
@@ -73,7 +76,8 @@ export function PlateBuilder() {
 
   // The cheapest protein and add-on drive the hint copy, so it tracks real prices.
   const proteinFrom = Math.min(...menu.proteins.map((p) => p.price));
-  const customFrom = Math.min(...menu.customizations.map((c) => c.price));
+  const plateAddOns = addOnsFor(menu, "plate");
+  const customFrom = Math.min(...plateAddOns.map((c) => c.price));
 
   const add = () => {
     if (!size || !heat) return;
@@ -184,7 +188,7 @@ export function PlateBuilder() {
 
       <Step n="05" title="Customize" hint={`${formatMoney(customFrom)} each`}>
         <div className="flex flex-wrap gap-2">
-          {menu.customizations.map((c) => {
+          {addOnsFor(menu, "plate").map((c) => {
             const on = customs.includes(c.id as CustomId);
             return (
               <button
@@ -254,6 +258,156 @@ export function ExtrasPicker() {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Sandwiches price off their own size list — a sub is $10/$12/$18 where a
+ * plate is $12/$18/$26 — so this is a separate product, not a plate variant.
+ * The filling is free because both cost the same at every size.
+ */
+export function SandwichBuilder() {
+  const { addSandwich, setOpen } = useCart();
+  const { menu } = useStorefront();
+  const [size, setSize] = useState<SandwichSizeId | null>(null);
+  const [filling, setFilling] = useState<SandwichFillingId | null>(null);
+  const [heat, setHeat] = useState<HeatId | null>(null);
+  const [customs, setCustoms] = useState<CustomId[]>([]);
+
+  const addOns = addOnsFor(menu, "sandwich");
+  const ready = size && filling && heat;
+  const price =
+    size && filling
+      ? sandwichPrice({ id: "", size, filling, heat: heat ?? "mild", customs }, menu)
+      : 0;
+
+  const add = () => {
+    if (!size || !filling || !heat) return;
+    addSandwich({ size, filling, heat, customs });
+    toast.success("Sandwich added to your formula!", {
+      action: { label: "View cart", onClick: () => setOpen(true) },
+    });
+    setSize(null);
+    setFilling(null);
+    setHeat(null);
+    setCustoms([]);
+  };
+
+  return (
+    <div className="lab-card space-y-6 p-5 sm:p-7">
+      <div>
+        <p className="lab-label text-primary">Also on the menu</p>
+        <h2 className="font-display text-2xl font-black">Build a sandwich</h2>
+      </div>
+
+      <Step n="01" title="Pick a size" hint="required">
+        <div className="grid grid-cols-3 gap-2">
+          {menu.sandwichSizes.map((x) => (
+            <button
+              key={x.id}
+              type="button"
+              className="chip flex-col !rounded-2xl !py-3 disabled:opacity-40"
+              data-active={size === x.id}
+              disabled={!x.available}
+              onClick={() => setSize(x.id as SandwichSizeId)}
+            >
+              <span>
+                {x.label}
+                {!x.available && <SoldOut />}
+              </span>
+              {/* The inches are the whole point of the size — show them. */}
+              {x.description && <span className="text-[11px] opacity-70">{x.description}</span>}
+              <span className="font-mono text-xs">{formatMoney(x.price)}</span>
+            </button>
+          ))}
+        </div>
+      </Step>
+
+      <Step n="02" title="Filling" hint="required">
+        <div className="grid grid-cols-2 gap-2">
+          {menu.sandwichFillings.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className="chip disabled:opacity-40"
+              data-active={filling === f.id}
+              disabled={!f.available}
+              onClick={() => setFilling(f.id as SandwichFillingId)}
+            >
+              {f.label}
+              <Allergens tags={f.allergens} />
+              {!f.available && <SoldOut />}
+            </button>
+          ))}
+        </div>
+      </Step>
+
+      <Step n="03" title="Heat level" hint="required">
+        <div className="grid grid-cols-2 gap-2">
+          {menu.heat.map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              className="chip disabled:opacity-40"
+              data-active={heat === h.id}
+              disabled={!h.available}
+              onClick={() => setHeat(h.id as HeatId)}
+            >
+              {h.id === "spicy" ? "🌶️ " : "🍅 "}
+              {h.label}
+              {!h.available && <SoldOut />}
+            </button>
+          ))}
+        </div>
+      </Step>
+
+      {addOns.length > 0 && (
+        <Step
+          n="04"
+          title="Customize"
+          hint={`${formatMoney(Math.min(...addOns.map((c) => c.price)))} each`}
+        >
+          <div className="flex flex-wrap gap-2">
+            {addOns.map((c) => {
+              const on = customs.includes(c.id as CustomId);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="chip disabled:opacity-40"
+                  data-active={on}
+                  aria-pressed={on}
+                  disabled={!c.available}
+                  onClick={() =>
+                    setCustoms((s) => (on ? s.filter((x) => x !== c.id) : [...s, c.id as CustomId]))
+                  }
+                >
+                  {c.label} +{formatMoney(c.price)}
+                  <Allergens tags={c.allergens} />
+                  {!c.available && <SoldOut />}
+                </button>
+              );
+            })}
+          </div>
+        </Step>
+      )}
+
+      <div className="flex items-center justify-between gap-3 border-t-2 border-dashed border-border pt-5">
+        <div>
+          <p className="lab-label text-muted-foreground">Sandwich total</p>
+          <p className="font-mono text-2xl font-bold">{formatMoney(price)}</p>
+        </div>
+        <Button variant="lab" size="xl" disabled={!ready} onClick={add}>
+          {ready
+            ? "Add sandwich"
+            : !size
+              ? "Pick a size"
+              : !filling
+                ? "Pick a filling"
+                : "Pick heat"}
+        </Button>
+      </div>
     </div>
   );
 }

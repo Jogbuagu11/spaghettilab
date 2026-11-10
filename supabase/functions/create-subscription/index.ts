@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
     const fulfillment = payload.fulfillment === "delivery" ? "delivery" : "pickup";
     const cart: CartInput = {
       plates: payload.plates,
+      sandwiches: payload.sandwiches ?? [],
       extras: payload.extras ?? {},
       fulfillment,
     };
@@ -114,6 +115,7 @@ Deno.serve(async (req) => {
         day_of_week: dayOfWeek,
         ready_minute: readyMinute,
         plates: cart.plates,
+        sandwiches: cart.sandwiches ?? [],
         extras: cart.extras ?? {},
         tip_percent: tipPercent,
         square_customer_id: saved.customerId,

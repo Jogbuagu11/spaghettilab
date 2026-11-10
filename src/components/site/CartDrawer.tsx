@@ -4,7 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/cart";
 import { DEFAULT_BASE, STATIC_MENU, formatMoney, type MenuData } from "@/lib/menu";
-import { orderTotals, platePrice, type Plate } from "@/lib/pricing";
+import { orderTotals, platePrice, sandwichPrice, type Plate, type Sandwich } from "@/lib/pricing";
 import { useStorefront } from "@/lib/storefront";
 
 export function describePlate(p: Plate, menu: MenuData = STATIC_MENU) {
@@ -20,6 +20,22 @@ export function describePlate(p: Plate, menu: MenuData = STATIC_MENU) {
     if (n) parts.push(`${n}× ${pr.label}`);
   });
   menu.customizations.forEach((c) => p.customs.includes(c.id as never) && parts.push(c.label));
+  return parts.join(" · ");
+}
+
+/** "Meatball Sandwich — Medium (5 in)", built from the two choices. */
+export function sandwichName(x: Sandwich, menu: MenuData = STATIC_MENU) {
+  const filling = menu.sandwichFillings.find((f) => f.id === x.filling)?.label ?? "Sandwich";
+  const size = menu.sandwichSizes.find((s) => s.id === x.size);
+  const inches = size?.description ? ` (${size.description})` : "";
+  return `${filling} Sandwich — ${size?.label ?? x.size}${inches}`;
+}
+
+export function describeSandwich(x: Sandwich, menu: MenuData = STATIC_MENU) {
+  const parts: string[] = [];
+  const heat = menu.heat.find((h) => h.id === x.heat);
+  if (heat) parts.push(heat.label);
+  menu.customizations.forEach((c) => x.customs.includes(c.id as never) && parts.push(c.label));
   return parts.join(" · ");
 }
 
@@ -40,9 +56,10 @@ export function CartLines({
   tip?: { percent: number; cents: number };
   totalLabel?: string;
 }) {
-  const { plates, extras, removePlate, fulfillment } = useCart();
+  const { plates, sandwiches, extras, removePlate, removeSandwich, fulfillment } = useCart();
   const { menu } = useStorefront();
-  const t = totals ?? orderTotals(plates, extras, fulfillment, menu.taxRate, menu);
+  const t =
+    totals ?? orderTotals(plates, extras, fulfillment, menu.taxRate, menu, undefined, sandwiches);
   return (
     <div className="space-y-3">
       {plates.map((p, i) => (
@@ -59,6 +76,26 @@ export function CartLines({
               <button
                 onClick={() => removePlate(p.id)}
                 aria-label={`Remove plate ${i + 1}`}
+                className="p-2 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+      {sandwiches.map((x) => (
+        <div key={x.id} className="flex items-start justify-between gap-3 rounded-xl bg-muted p-3">
+          <div>
+            <p className="font-semibold">{sandwichName(x, menu)}</p>
+            <p className="text-sm text-muted-foreground">{describeSandwich(x, menu)}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="font-mono font-bold">{formatMoney(sandwichPrice(x, menu))}</span>
+            {!compact && (
+              <button
+                onClick={() => removeSandwich(x.id)}
+                aria-label={`Remove ${sandwichName(x, menu)}`}
                 className="p-2 text-muted-foreground hover:text-destructive"
               >
                 <Trash2 className="size-4" />
@@ -108,7 +145,7 @@ function Row({ k, v, bold }: { k: string; v: string; bold?: boolean }) {
 }
 
 export function CartDrawer() {
-  const { open, setOpen, plates, count } = useCart();
+  const { open, setOpen, plates, sandwiches, count } = useCart();
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent className="flex w-full flex-col gap-4 overflow-y-auto bg-background sm:max-w-md">
@@ -134,12 +171,12 @@ export function CartDrawer() {
                 variant="lab"
                 size="xl"
                 onClick={() => setOpen(false)}
-                disabled={plates.length === 0}
+                disabled={plates.length + sandwiches.length === 0}
               >
                 <Link to="/order">Checkout</Link>
               </Button>
               <Button asChild variant="labGhost" size="xl" onClick={() => setOpen(false)}>
-                <Link to="/menu">Add another plate</Link>
+                <Link to="/menu">Add something else</Link>
               </Button>
             </div>
           </>

@@ -1,6 +1,6 @@
 import { functionsBaseUrl, isSupabaseConfigured, supabase } from "./supabase";
 import type { ExtraId } from "./menu";
-import type { Fulfillment, Plate } from "./pricing";
+import type { Fulfillment, Plate, Sandwich } from "./pricing";
 
 /** Thrown with the human-readable message an edge function returned. */
 export class ApiError extends Error {
@@ -52,6 +52,7 @@ export interface PlaceOrderInput {
   sourceId: string;
   verificationToken?: string | undefined;
   plates: Plate[];
+  sandwiches: Sandwich[];
   extras: Partial<Record<ExtraId, number>>;
   fulfillment: Fulfillment;
   /** "asap" or an ISO timestamp from the slot picker. */
@@ -71,8 +72,15 @@ export function placeOrder(input: PlaceOrderInput): Promise<PlacedOrder> {
       plates: input.plates.map((p) => ({
         size: p.size,
         heat: p.heat,
+        base: p.base,
         proteins: p.proteins,
         customizations: p.customs,
+      })),
+      sandwiches: input.sandwiches.map((x) => ({
+        size: x.size,
+        filling: x.filling,
+        heat: x.heat,
+        customizations: x.customs,
       })),
     }),
   });
@@ -203,6 +211,7 @@ export async function uploadDeliveryPhoto(orderId: string, file: File): Promise<
 export interface CreateSubscriptionInput {
   sourceId: string;
   plates: Plate[];
+  sandwiches: Sandwich[];
   extras: Partial<Record<ExtraId, number>>;
   fulfillment: Fulfillment;
   /** 0 = Sunday. */
@@ -230,8 +239,15 @@ export function createSubscription(input: CreateSubscriptionInput): Promise<Crea
       plates: input.plates.map((p) => ({
         size: p.size,
         heat: p.heat,
+        base: p.base,
         proteins: p.proteins,
         customizations: p.customs,
+      })),
+      sandwiches: input.sandwiches.map((x) => ({
+        size: x.size,
+        filling: x.filling,
+        heat: x.heat,
+        customizations: x.customs,
       })),
     }),
   });

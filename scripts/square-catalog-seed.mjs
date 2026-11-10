@@ -63,7 +63,7 @@ const SQUARE_BASE =
 // ------------------------------------------------------------ data access ----
 
 const MENU_COLUMNS =
-  "id, group_name, label, price_cents, sort_order, square_object_id, square_variation_id";
+  "id, group_name, label, description, price_cents, sort_order, applies_to, square_object_id, square_variation_id";
 
 /**
  * Two ways in, because the service role key and the database URL tend to be
@@ -163,6 +163,10 @@ async function square(pathname, init = {}) {
 const money = (cents) => ({ amount: cents, currency: "USD" });
 
 /** Square rejects '#' and most punctuation in temp ids. */
+/** An add-on with no scope recorded belongs to both products. */
+const appliesTo = (option, product) =>
+  (option.applies_to ?? ["plate", "sandwich"]).includes(product);
+
 const tempId = (...parts) => `#${parts.join("-").replace(/[^A-Za-z0-9_-]/g, "")}`;
 
 function modifier(option, listTempId) {
@@ -195,18 +199,21 @@ function modifierList({ key, name, selectionType, options, allowQuantity = false
 }
 
 /**
- * The plate builder is one item with size variations plus three modifier
- * lists — that way Square receipts and sales reports break down by size and
+ * A built-to-order item: size variations plus the modifier lists that apply
+ * to it. That way Square receipts and sales reports break down by size and
  * topping instead of showing a single opaque "Order" line.
+ *
+ * Each product takes only its own lists — a plate has no filling, and a
+ * sandwich has no minced-pork base or $4 protein stacking.
  */
-function plateItem(sizes, listIds) {
+function builtItem({ slug, name, description, sizes, listIds, sizeSuffix = false }) {
   return {
     type: "ITEM",
-    id: tempId("item", "spaghetti-plate"),
+    id: tempId("item", slug),
     present_at_all_locations: true,
     item_data: {
-      name: "Spaghetti Plate",
-      description: "Fresh spaghetti, spicy or not, built to order.",
+      name,
+      description,
       product_type: "FOOD_AND_BEV",
       modifier_list_info: listIds.map((id, index) => ({
         modifier_list_id: id,
@@ -218,7 +225,9 @@ function plateItem(sizes, listIds) {
         id: tempId("var", size.id),
         present_at_all_locations: true,
         item_variation_data: {
-          name: size.label,
+          // Sandwich sizes carry their dimensions ("5 in"), which belong on the
+          // receipt; plate sizes carry prose, which does not.
+          name: sizeSuffix && size.description ? `${size.label} (${size.description})` : size.label,
           pricing_type: "FIXED_PRICING",
           price_money: money(size.price_cents),
           ordinal: index,
@@ -352,6 +361,7 @@ async function main() {
 
   const sizes = byGroup("size");
   if (sizes.length === 0) throw new Error("No sizes in menu_options — run the migrations first.");
+  const subSizes = byGroup("sandwich_size");
 
   const lists = [
     modifierList({ key: "heat", name: "Heat", selectionType: "SINGLE", options: byGroup("heat") }),
@@ -368,20 +378,59 @@ async function main() {
       options: byGroup("protein"),
       allowQuantity: true,
     }),
+    // Split by product: one shared list would let the Square POS put
+    // provolone on spaghetti. Mushroom appears in both, which is the price of
+    // Square not supporting per-item subsets of a list.
     modifierList({
-      key: "customization",
-      name: "Add-ons",
+      key: "plate-addons",
+      name: "Plate add-ons",
       selectionType: "MULTIPLE",
-      options: byGroup("customization"),
+      options: byGroup("customization").filter((o) => appliesTo(o, "plate")),
+    }),
+    modifierList({
+      key: "sandwich-addons",
+      name: "Sandwich add-ons",
+      selectionType: "MULTIPLE",
+      options: byGroup("customization").filter((o) => appliesTo(o, "sandwich")),
+    }),
+    modifierList({
+      key: "sandwich",
+      name: "Filling",
+      selectionType: "SINGLE",
+      options: byGroup("sandwich"),
     }),
   ];
 
   const existing = DRY_RUN ? { items: new Map(), lists: new Map() } : await fetchExistingCatalog();
 
-  // Lists are reconciled first so the plate item can reference their real ids.
-  const listIds = lists.map((list) => reconcileList(list, existing) ?? list.id);
+  // Lists are reconciled first so the items can reference their real ids.
+  // Keyed by the list's placeholder id, since a reconciled list comes back
+  // with Square's real id and the catalog objects carry no key of their own.
+  const listIds = new Map(lists.map((list) => [list.id, reconcileList(list, existing) ?? list.id]));
+  const idsFor = (...keys) => keys.map((k) => listIds.get(tempId("list", k))).filter(Boolean);
 
-  const items = [plateItem(sizes, listIds), ...byGroup("extra").map(extraItem)];
+  const items = [
+    builtItem({
+      slug: "spaghetti-plate",
+      name: "Spaghetti Plate",
+      description: "Fresh spaghetti, spicy or not, built to order.",
+      sizes,
+      listIds: idsFor("heat", "base", "protein", "plate-addons"),
+    }),
+    ...(subSizes.length > 0
+      ? [
+          builtItem({
+            slug: "sandwich",
+            name: "Sandwich",
+            description: "Meatball or sausage, on bread, 3 to 8 inches.",
+            sizes: subSizes,
+            sizeSuffix: true,
+            listIds: idsFor("sandwich", "heat", "sandwich-addons"),
+          }),
+        ]
+      : []),
+    ...byGroup("extra").map(extraItem),
+  ];
   items.forEach((item) => reconcileItem(item, existing));
 
   const objects = [...lists, ...items];

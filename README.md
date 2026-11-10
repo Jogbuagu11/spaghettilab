@@ -352,6 +352,28 @@ cross-contamination notice sits under the plate builder, since a MEHKO can't gua
 Editing them is a DB field today — worth surfacing in `/admin` if the menu grows. The same
 goes for `menu_options.kind`: set it when inserting a new extra, or checkout won't suggest it.
 
+## Two product lines
+
+A plate and a sandwich are separate products, not two shapes of the same one:
+a plate is $12/$18/$26 and a sandwich is $10/$12/$18, so they can't share a size
+group. Each has its own `menu_group` (`size` / `sandwich_size`) carrying the price,
+and the choice on top is free — minced pork or none on a plate, meatball or sausage
+in a sandwich — because within a product every option costs the same.
+
+`menu_options.applies_to` scopes the add-ons. Provolone on spaghetti and grated
+parmesan on a sub are both wrong, but mushroom goes on either, so the row is
+tagged rather than duplicated — one ingredient, one sold-out switch. The builder
+hides what doesn't apply and **the server refuses it**, since a stale tab is
+enough to send an add-on that's no longer offered.
+
+Checkout's gate is "something to eat", not "a plate": a sandwich on its own is an
+order, a Coke on its own still isn't. Standing orders carry a `sandwiches` column
+alongside `plates`, and the table's check constraint counts both.
+
+In Square each product gets only its own modifier lists — the POS would otherwise
+let someone put provolone on spaghetti. Mushroom appears in both add-on lists,
+which is the cost of Square not supporting per-item subsets of one list.
+
 ## Checkout confirmation
 
 The Pay button opens a confirmation dialog rather than charging straight away. It restates the
