@@ -213,8 +213,8 @@ export function PlateBuilder() {
 
       <p className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">
         <strong className="text-foreground">Allergens:</strong> every plate contains wheat. Prepared
-        in a home kitchen that also handles dairy, pork and beef, so we can't guarantee any dish is
-        free from traces. Tell us about an allergy in the order notes.
+        in a kitchen that also handles dairy, pork and beef, so we can't guarantee any dish is free
+        from traces. Tell us about an allergy in the order notes.
       </p>
 
       <div className="flex items-center justify-between gap-3 border-t-2 border-dashed border-border pt-5">

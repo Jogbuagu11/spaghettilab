@@ -168,8 +168,8 @@ export function renderEmail(opts: LayoutOptions): string {
             <td style="padding:24px 18px 0;text-align:center;">
               ${opts.footerNote ? `<p style="margin:0 0 14px;font-family:${SANS};font-size:13px;line-height:1.6;color:${BRAND.mutedText};">${opts.footerNote}</p>` : ""}
               <p style="margin:0 0 6px;font-family:${SANS};font-size:12px;line-height:1.7;color:${BRAND.mutedText};">
-                Spaghetti Lab · Permitted MEHKO, Santa Clara County<br>
-                82 E Santa Clara St, San Jose, CA 95113 · ${social}
+                Spaghetti Lab · 82 E Santa Clara St, San Jose, CA 95113<br>
+                ${social}
               </p>
               <p style="margin:10px 0 0;font-family:${SANS};font-size:11px;color:${BRAND.mutedText};">
                 This message was sent about your order. Replies go to a monitored inbox.

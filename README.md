@@ -347,7 +347,8 @@ moves. Making it a status would force every transition table to account for it.
 
 Tags live per menu option (`menu_options.allergens`), so a plate's warning is assembled from
 exactly what the customer chose rather than listing everything the kitchen touches. A standing
-cross-contamination notice sits under the plate builder, since a MEHKO can't guarantee separation.
+cross-contamination notice sits under the plate builder, since one kitchen can't guarantee
+separation.
 
 Editing them is a DB field today — worth surfacing in `/admin` if the menu grows. The same
 goes for `menu_options.kind`: set it when inserting a new extra, or checkout won't suggest it.

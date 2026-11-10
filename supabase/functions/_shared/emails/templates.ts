@@ -357,7 +357,7 @@ export function reviewRequest(order: EmailOrder, ctx: EmailContext): RenderedEma
       eyebrow: "One quick favour",
       heading: "How did we do?",
       body: `
-        ${paragraph(`Thanks for ordering with us, ${firstName(order.customer_name)}. We're a small home kitchen, so a short review genuinely moves the needle for us.`)}
+        ${paragraph(`Thanks for ordering with us, ${firstName(order.customer_name)}. We're a small kitchen, so a short review genuinely moves the needle for us.`)}
         ${paragraph("It takes about thirty seconds.")}`,
       cta: { label: "Leave a review", url: `${SITE_URL}/review?token=${order.track_token}` },
       footerNote: ctx.googleReviewUrl

@@ -85,9 +85,6 @@ export function SiteFooter() {
             Fresh spaghetti pickup &amp; delivery in Downtown San Jose. Serving{" "}
             {settings.originPostalCode} and everywhere within {settings.deliveryRadiusMiles} miles.
           </p>
-          <p className="lab-label mt-4 inline-block rounded-full border border-background/40 px-3 py-1">
-            Permitted MEHKO — Santa Clara County
-          </p>
         </div>
 
         <div>
