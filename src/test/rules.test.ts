@@ -172,9 +172,9 @@ describe("tax rounding", () => {
   });
 });
 
-// Sandwiches price off their own size list — a sub is $10/$12/$18 where a
-// plate is $12/$18/$26 — and the filling is free because both cost the same.
-describe("sandwiches", () => {
+// Subs price off their own size list — $10/$12/$18 where a plate is
+// $12/$18/$26 — and the filling is free because both cost the same.
+describe("subs", () => {
   const sandwich = (o: Partial<Sandwich> = {}): Sandwich => ({
     id: "s1",
     size: "sandwich-small",
@@ -221,7 +221,7 @@ describe("add-on scoping", () => {
     expect(ids).not.toContain("provolone");
   });
 
-  it("offers provolone on a sandwich but not parmesan", () => {
+  it("offers provolone on a sub but not parmesan", () => {
     const ids = addOnsFor(STATIC_MENU, "sandwich").map((c) => c.id);
     expect(ids).toContain("provolone");
     expect(ids).not.toContain("extra-cheese");

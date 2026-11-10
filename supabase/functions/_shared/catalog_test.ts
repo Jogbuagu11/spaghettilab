@@ -141,7 +141,7 @@ Deno.test("rejects an empty cart", () => {
   assertThrows(
     () => priceOrder(catalog(), { plates: [], fulfillment: "pickup" }),
     PublicError,
-    "plate or a sandwich",
+    "plate or a sub",
   );
 });
 
@@ -428,7 +428,7 @@ Deno.test("an unknown base is rejected", () => {
   );
 });
 
-// --- sandwiches -----------------------------------------------------------
+// --- subs -----------------------------------------------------------
 
 const sub = (extra: Record<string, unknown> = {}) => ({
   size: "sandwich-small",
@@ -438,7 +438,7 @@ const sub = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-Deno.test("a sandwich prices off its own size list, not the plate's", () => {
+Deno.test("a sub prices off its own size list, not the plate's", () => {
   const priced = priceOrder(catalog(), { plates: [], sandwiches: [sub()], fulfillment: "pickup" });
   assertEquals(priced.subtotal_cents, 1000);
 });
@@ -453,13 +453,13 @@ Deno.test("the filling is free either way", () => {
   assertEquals(meat.subtotal_cents, saus.subtotal_cents);
 });
 
-Deno.test("a sandwich can be the whole order", () => {
+Deno.test("a sub can be the whole order", () => {
   const priced = priceOrder(catalog(), { plates: [], sandwiches: [sub()], fulfillment: "pickup" });
   assertEquals(priced.lines.length, 1);
   assertEquals(priced.lines[0]!.kind, "sandwich");
 });
 
-Deno.test("an order with neither a plate nor a sandwich is refused", () => {
+Deno.test("an order with neither a plate nor a sub is refused", () => {
   assertThrows(
     () => priceOrder(catalog(), { plates: [], extras: { coke: 1 }, fulfillment: "pickup" }),
     PublicError,
@@ -472,7 +472,7 @@ Deno.test("the receipt line names the filling, size and inches", () => {
     sandwiches: [sub({ size: "sandwich-large" })],
     fulfillment: "pickup",
   });
-  assertEquals(priced.lines[0]!.label, "sandwich-meatball Sandwich — sandwich-large (8 in)");
+  assertEquals(priced.lines[0]!.label, "sandwich-meatball Sub — sandwich-large (8 in)");
 });
 
 // --- add-on scoping -------------------------------------------------------
@@ -491,7 +491,7 @@ Deno.test("provolone cannot be ordered on a plate", () => {
   );
 });
 
-Deno.test("grated parmesan cannot be ordered on a sandwich", () => {
+Deno.test("grated parmesan cannot be ordered on a sub", () => {
   assertThrows(
     () =>
       priceOrder(catalog(), {
@@ -500,7 +500,7 @@ Deno.test("grated parmesan cannot be ordered on a sandwich", () => {
         fulfillment: "pickup",
       }),
     PublicError,
-    "isn't available on a sandwich",
+    "isn't available on a sub",
   );
 });
 
@@ -518,7 +518,7 @@ Deno.test("mushroom is allowed on both", () => {
   assertEquals(onSub.subtotal_cents, 1100);
 });
 
-Deno.test("provolone on a sandwich costs a dollar", () => {
+Deno.test("provolone on a sub costs a dollar", () => {
   const priced = priceOrder(catalog(), {
     plates: [],
     sandwiches: [sub({ customizations: ["provolone"] })],

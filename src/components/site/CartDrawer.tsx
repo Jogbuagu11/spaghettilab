@@ -23,12 +23,12 @@ export function describePlate(p: Plate, menu: MenuData = STATIC_MENU) {
   return parts.join(" · ");
 }
 
-/** "Meatball Sandwich — Medium (5 in)", built from the two choices. */
+/** "Meatball Sub — Medium (5 in)", built from the two choices. */
 export function sandwichName(x: Sandwich, menu: MenuData = STATIC_MENU) {
-  const filling = menu.sandwichFillings.find((f) => f.id === x.filling)?.label ?? "Sandwich";
+  const filling = menu.sandwichFillings.find((f) => f.id === x.filling)?.label ?? "Sub";
   const size = menu.sandwichSizes.find((s) => s.id === x.size);
   const inches = size?.description ? ` (${size.description})` : "";
-  return `${filling} Sandwich — ${size?.label ?? x.size}${inches}`;
+  return `${filling} Sub — ${size?.label ?? x.size}${inches}`;
 }
 
 export function describeSandwich(x: Sandwich, menu: MenuData = STATIC_MENU) {

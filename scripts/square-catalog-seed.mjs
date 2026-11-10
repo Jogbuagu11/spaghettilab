@@ -389,7 +389,7 @@ async function main() {
     }),
     modifierList({
       key: "sandwich-addons",
-      name: "Sandwich add-ons",
+      name: "Sub add-ons",
       selectionType: "MULTIPLE",
       options: byGroup("customization").filter((o) => appliesTo(o, "sandwich")),
     }),
@@ -421,8 +421,8 @@ async function main() {
       ? [
           builtItem({
             slug: "sandwich",
-            name: "Sandwich",
-            description: "Meatball or sausage, on bread, 3 to 8 inches.",
+            name: "Sub",
+            description: "Meatball or sausage, 3 to 8 inches.",
             sizes: subSizes,
             sizeSuffix: true,
             listIds: idsFor("sandwich", "heat", "sandwich-addons"),

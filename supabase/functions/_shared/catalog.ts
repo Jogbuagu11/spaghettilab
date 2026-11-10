@@ -246,6 +246,9 @@ function defaultBase(catalog: Catalog): string {
   return best.id;
 }
 
+/** "sandwich" is the internal name; customers read "sub". */
+const PRODUCT_LABEL: Record<"plate" | "sandwich", string> = { plate: "plate", sandwich: "sub" };
+
 /**
  * An add-on, checked against the product it was asked for. Provolone on
  * spaghetti is a client that's lying or stale; either way it isn't on sale.
@@ -254,7 +257,7 @@ function addOn(catalog: Catalog, id: unknown, product: "plate" | "sandwich"): Me
   const found = option(catalog, id, "customization");
   const appliesTo = found.applies_to ?? ["plate", "sandwich"];
   if (!appliesTo.includes(product)) {
-    throw new PublicError(`${found.label} isn't available on a ${product}.`);
+    throw new PublicError(`${found.label} isn't available on a ${PRODUCT_LABEL[product]}.`);
   }
   return found;
 }
@@ -287,9 +290,9 @@ export function priceOrder(
 ): PricedOrder {
   const sandwiches = Array.isArray(cart.sandwiches) ? cart.sandwiches : [];
   const plates = Array.isArray(cart.plates) ? cart.plates : [];
-  // A sandwich is a meal too, so the gate is "something to eat", not "a plate".
+  // A sub is a meal too, so the gate is "something to eat", not "a plate".
   if (plates.length + sandwiches.length === 0) {
-    throw new PublicError("Add a spaghetti plate or a sandwich to your order.");
+    throw new PublicError("Add a spaghetti plate or a sub to your order.");
   }
   if (plates.length + sandwiches.length > MAX_PLATES) {
     throw new PublicError(`Orders are limited to ${MAX_PLATES} items — call us for catering.`);
@@ -387,7 +390,7 @@ export function priceOrder(
 
     lines.push({
       kind: "sandwich",
-      label: `${filling.label} Sandwich — ${size.label}${inches}`,
+      label: `${filling.label} Sub — ${size.label}${inches}`,
       quantity: 1,
       unit_price_cents: price,
       total_price_cents: price,
@@ -400,7 +403,7 @@ export function priceOrder(
       },
       sort_order: sort++,
       square: {
-        name: "Sandwich",
+        name: "Sub",
         variationName: `${size.label}${inches}`,
         basePriceCents: size.price_cents,
         modifiers,

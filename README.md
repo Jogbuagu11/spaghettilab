@@ -354,11 +354,17 @@ goes for `menu_options.kind`: set it when inserting a new extra, or checkout won
 
 ## Two product lines
 
-A plate and a sandwich are separate products, not two shapes of the same one:
-a plate is $12/$18/$26 and a sandwich is $10/$12/$18, so they can't share a size
-group. Each has its own `menu_group` (`size` / `sandwich_size`) carrying the price,
-and the choice on top is free — minced pork or none on a plate, meatball or sausage
-in a sandwich — because within a product every option costs the same.
+A plate and a sub are separate products, not two shapes of the same one: a plate
+is $12/$18/$26 and a sub is $10/$12/$18, so they can't share a size group. Each
+has its own `menu_group` (`size` / `sandwich_size`) carrying the price, and the
+choice on top is free — minced pork or none on a plate, meatball or sausage in a
+sub — because within a product every option costs the same.
+
+**The internal name is "sandwich", the customer-facing word is "sub".** The group
+names, row ids and TypeScript types all say sandwich; every label, receipt line
+and error message says sub. `menu_group` is a Postgres enum and the ids are baked
+into live rows, so renaming them would cost a migration and buy nothing visible.
+The admin's Menu tab maps the group names to the readable headings.
 
 `menu_options.applies_to` scopes the add-ons. Provolone on spaghetti and grated
 parmesan on a sub are both wrong, but mushroom goes on either, so the row is
@@ -366,7 +372,7 @@ tagged rather than duplicated — one ingredient, one sold-out switch. The build
 hides what doesn't apply and **the server refuses it**, since a stale tab is
 enough to send an add-on that's no longer offered.
 
-Checkout's gate is "something to eat", not "a plate": a sandwich on its own is an
+Checkout's gate is "something to eat", not "a plate": a sub on its own is an
 order, a Coke on its own still isn't. Standing orders carry a `sandwiches` column
 alongside `plates`, and the table's check constraint counts both.
 

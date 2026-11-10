@@ -432,15 +432,15 @@ function OrderPage() {
     ],
   );
 
-  // Sandwiches are a meal in their own right, so the gate is "something to
-  // eat", not "a plate". Sides and drinks alone still aren't an order.
+  // A sub is a meal in its own right, so the gate is "something to eat",
+  // not "a plate". Sides and drinks alone still aren't an order.
   if (plates.length + sandwiches.length === 0) {
     return (
       <PageShell>
         <div className="mx-auto max-w-md px-4 py-24 text-center">
           <h1 className="text-4xl font-black">Checkout</h1>
           <p className="mt-3 text-muted-foreground">
-            Add a spaghetti plate or a sandwich to start your order.
+            Add a spaghetti plate or a sub to start your order.
           </p>
           <Button asChild variant="lab" size="xl" className="mt-6">
             <Link to="/menu">Build your order</Link>

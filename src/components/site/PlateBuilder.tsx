@@ -263,9 +263,13 @@ export function ExtrasPicker() {
 }
 
 /**
- * Sandwiches price off their own size list — a sub is $10/$12/$18 where a
- * plate is $12/$18/$26 — so this is a separate product, not a plate variant.
- * The filling is free because both cost the same at every size.
+ * Subs price off their own size list — $10/$12/$18 where a plate is
+ * $12/$18/$26 — so this is a separate product, not a plate variant. The
+ * filling is free because both cost the same at every size.
+ *
+ * "sandwich" stays the internal name throughout: it's a Postgres enum value
+ * and ids baked into live rows, and renaming those buys nothing a customer
+ * can see.
  */
 export function SandwichBuilder() {
   const { addSandwich, setOpen } = useCart();
@@ -285,7 +289,7 @@ export function SandwichBuilder() {
   const add = () => {
     if (!size || !filling || !heat) return;
     addSandwich({ size, filling, heat, customs });
-    toast.success("Sandwich added to your formula!", {
+    toast.success("Sub added to your formula!", {
       action: { label: "View cart", onClick: () => setOpen(true) },
     });
     setSize(null);
@@ -298,7 +302,7 @@ export function SandwichBuilder() {
     <div className="lab-card space-y-6 p-5 sm:p-7">
       <div>
         <p className="lab-label text-primary">Also on the menu</p>
-        <h2 className="font-display text-2xl font-black">Build a sandwich</h2>
+        <h2 className="font-display text-2xl font-black">Build a sub</h2>
       </div>
 
       <Step n="01" title="Pick a size" hint="required">
@@ -395,17 +399,11 @@ export function SandwichBuilder() {
 
       <div className="flex items-center justify-between gap-3 border-t-2 border-dashed border-border pt-5">
         <div>
-          <p className="lab-label text-muted-foreground">Sandwich total</p>
+          <p className="lab-label text-muted-foreground">Sub price</p>
           <p className="font-mono text-2xl font-bold">{formatMoney(price)}</p>
         </div>
         <Button variant="lab" size="xl" disabled={!ready} onClick={add}>
-          {ready
-            ? "Add sandwich"
-            : !size
-              ? "Pick a size"
-              : !filling
-                ? "Pick a filling"
-                : "Pick heat"}
+          {ready ? "Add sub" : !size ? "Pick a size" : !filling ? "Pick a filling" : "Pick heat"}
         </Button>
       </div>
     </div>

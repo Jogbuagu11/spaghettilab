@@ -1,6 +1,14 @@
 import { EXTRAS, SANDWICH_FILLINGS, SANDWICH_SIZES, SIZES } from "./menu";
 
-export const DAYS_LD = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+export const DAYS_LD = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 export const menuLd = {
   "@context": "https://schema.org",
@@ -20,12 +28,12 @@ export const menuLd = {
     },
     {
       "@type": "MenuSection",
-      name: "Sandwiches",
+      name: "Subs",
       hasMenuItem: SANDWICH_FILLINGS.flatMap((f) =>
         SANDWICH_SIZES.map((s) => ({
           "@type": "MenuItem",
-          name: `${f.label} Sandwich — ${s.label}`,
-          description: "Meatball or sausage, spicy or not, on bread.",
+          name: `${f.label} Sub — ${s.label}`,
+          description: "Meatball or sausage, spicy or not, on a roll.",
           offers: { "@type": "Offer", price: (s.price / 100).toFixed(2), priceCurrency: "USD" },
         })),
       ),

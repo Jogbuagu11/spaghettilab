@@ -756,15 +756,17 @@ function MenuTab() {
     onError: (error) => toast.error(error instanceof Error ? error.message : "Save failed."),
   });
 
-  const groups = [
-    "size",
-    "heat",
-    "base",
-    "protein",
-    "sandwich_size",
-    "sandwich",
-    "customization",
-    "extra",
+  // Keyed by the DB group name; the label is what the kitchen reads. The
+  // sandwich groups are named for a word customers never see — "sub" is.
+  const groups: [string, string][] = [
+    ["size", "Plate size"],
+    ["heat", "Heat"],
+    ["base", "Meat in the sauce"],
+    ["protein", "Extra protein"],
+    ["sandwich_size", "Sub size"],
+    ["sandwich", "Sub filling"],
+    ["customization", "Add-ons"],
+    ["extra", "Sides & drinks"],
   ];
 
   return (
@@ -776,9 +778,9 @@ function MenuTab() {
         </p>
       </div>
 
-      {groups.map((group) => (
+      {groups.map(([group, heading]) => (
         <section key={group} className="lab-card p-4">
-          <h2 className="lab-label mb-3 text-primary">{group}</h2>
+          <h2 className="lab-label mb-3 text-primary">{heading}</h2>
           <div className="space-y-2">
             {(options ?? [])
               .filter((o) => o.group_name === group)
